@@ -1,4 +1,11 @@
+# Dependencies
 /node_modules
+
+# Logs
 npm-debug.log*
+
+# macOS artifacts
 .DS_Store
 
+# Build output (keep tracked dist artifacts committed to the repo)
+# dist/

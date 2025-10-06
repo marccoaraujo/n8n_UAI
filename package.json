@@ -10,6 +10,14 @@
   ],
   "author": "",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/marccoaraujo/n8n_UAI.git"
+  },
+  "bugs": {
+    "url": "https://github.com/marccoaraujo/n8n_UAI/issues"
+  },
+  "homepage": "https://github.com/marccoaraujo/n8n_UAI#readme",
   "main": "dist/nodes/OpenAIChatKit/ChatKitAgentBuilder.node.js",
   "types": "dist/nodes/OpenAIChatKit/ChatKitAgentBuilder.node.d.ts",
   "files": [

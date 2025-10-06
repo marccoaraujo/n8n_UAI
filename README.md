@@ -1,22 +1,26 @@
-# n8n OpenAI ChatKit Custom Node
+# n8n_UAI
 
-Este repositório contém um node customizado para o [n8n](https://n8n.io) que facilita a integração com o ChatKit do Agent Builder da OpenAI. O node permite criar, recuperar e listar sessões através da API pública apresentada na documentação oficial da OpenAI.
+Este repositório reúne os recursos utilizados para criar e publicar nodes customizados para o n8n.
 
-## Funcionalidades
+## OpenAI ChatKit Custom Node
+
+Este pacote disponibiliza um node que facilita a integração com o ChatKit do Agent Builder da OpenAI. O node permite criar, recuperar e listar sessões através da API pública apresentada na documentação oficial da OpenAI.
+
+### Funcionalidades
 
 - Criar uma nova sessão do ChatKit com instruções personalizadas, modelo padrão e configurações de ferramentas.
 - Recuperar os detalhes de uma sessão existente a partir do ID.
 - Listar as sessões disponíveis na sua conta.
 
-## Estrutura do projeto
+### Estrutura do projeto
 
 - `credentials/OpenAiChatKitApi.credentials.ts`: credenciais utilizadas para armazenar a chave de API e demais parâmetros necessários.
 - `nodes/OpenAIChatKit/ChatKitAgentBuilder.node.ts`: implementação principal do node.
 - `nodes/OpenAIChatKit/openai.svg`: ícone exibido pelo node no editor do n8n.
 
-## Como utilizar
+### Como utilizar
 
-1. Instale o pacote no diretório raiz do seu n8n (utilizando o prefixo oficial `n8n-nodes-*` para publicação no npm):
+1. Instale o pacote no diretório raiz do seu n8n utilizando o prefixo oficial `n8n-nodes-*` para publicação no npm:
 
    ```bash
    npm install n8n-nodes-openai-chatkit
@@ -36,7 +40,7 @@ Este repositório contém um node customizado para o [n8n](https://n8n.io) que f
    - **Base URL**: opcional, use apenas se estiver utilizando um proxy.
    - **OpenAI-Beta Header**: valor do cabeçalho exigido pela documentação da OpenAI (por padrão `chatgpt-extensions=2024-10-01`).
 
-## Configuração do node
+### Configuração do node
 
 Ao usar a operação **Create Session** é possível definir:
 
@@ -49,10 +53,14 @@ Ao usar a operação **Create Session** é possível definir:
 
 As operações **Get Session** e **List Sessions** não exigem parâmetros adicionais além das credenciais.
 
-## Tratamento de erros
+### Tratamento de erros
 
 Quando o node é utilizado em fluxos com a opção "Continue On Fail" ativa, eventuais erros de chamada à API serão expostos no campo `error` do item retornado para facilitar o diagnóstico.
 
-## Licença
+### Publicação
+
+O fluxo de publicação está automatizado via GitHub Actions (`.github/workflows/release.yml`). Ao criar uma tag no formato `v*.*.*`, o projeto é compilado com `tsc` e publicado no npm usando provenance.
+
+### Licença
 
 Distribuído sob a licença MIT. Consulte o arquivo `LICENSE` caso seja adicionado futuramente.
