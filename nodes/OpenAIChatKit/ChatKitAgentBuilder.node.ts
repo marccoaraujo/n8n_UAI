@@ -18,7 +18,7 @@ export class ChatKitAgentBuilder implements INodeType {
   description: INodeTypeDescription = {
     displayName: 'OpenAI ChatKit (Agent Builder)',
     name: 'chatKitAgentBuilder',
-    icon: 'file:openai.svg',
+    icon: 'file:dynamics-labs.svg',
     group: ['transform'],
     version: 1,
     subtitle: '={{$parameter["operation"]}}',

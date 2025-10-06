@@ -11,7 +11,7 @@ class ChatKitAgentBuilder {
         this.description = {
             displayName: 'OpenAI ChatKit (Agent Builder)',
             name: 'chatKitAgentBuilder',
-            icon: 'file:openai.svg',
+            icon: 'file:dynamics-labs.svg',
             group: ['transform'],
             version: 1,
             subtitle: '={{$parameter["operation"]}}',
