@@ -4,18 +4,17 @@ Este repositório reúne os recursos utilizados para criar e publicar nodes cust
 
 ## OpenAI ChatKit Custom Node
 
-Este pacote disponibiliza um node que facilita a integração com o ChatKit do Agent Builder da OpenAI. O node permite criar, recuperar e listar sessões através da API pública apresentada na documentação oficial da OpenAI.
+Este pacote disponibiliza um node que facilita a integração com o ChatKit do Agent Builder da OpenAI. O node reproduz o fluxo descrito na documentação oficial — criar uma sessão autorizada para um workflow e encerrá-la quando não for mais necessária. Toda a comunicação segue os requisitos do beta `chatkit_beta=v1` documentados em [ChatKit](https://platform.openai.com/docs/guides/chatkit).
 
 ### Funcionalidades
 
-- Criar uma nova sessão do ChatKit vinculada a um workflow do Agent Builder com instruções personalizadas, modelo padrão e configurações de ferramentas.
-- Recuperar os detalhes de uma sessão existente a partir do ID.
-- Listar as sessões disponíveis na sua conta.
+- Criar uma nova sessão do ChatKit vinculada a um workflow do Agent Builder, informando o identificador do usuário final e customizações opcionais de workflow, limite de requisições e recursos do widget.
+- Cancelar sessões ativas para encerrar o acesso do widget ao workflow quando o chat não for mais necessário.
 
 ### Estrutura do projeto
 
 - `credentials/OpenAiChatKitApi.credentials.ts`: credenciais utilizadas para armazenar a chave de API e demais parâmetros necessários.
-- `nodes/OpenAIChatKit/ChatKitAgentBuilder.node.ts`: implementação principal do node.
+- `nodes/OpenAIChatKit/ChatKitAgentBuilder.node.ts`: implementação principal do node (gera requests `POST /chatkit/sessions` e `POST /chatkit/sessions/{id}/cancel`).
 - `nodes/OpenAIChatKit/openai.svg`: ícone exibido pelo node no editor do n8n.
 
 ### Como utilizar
@@ -37,25 +36,26 @@ Este pacote disponibiliza um node que facilita a integração com o ChatKit do A
 3. Reinicie o n8n. O node "OpenAI ChatKit" estará disponível na categoria **Transform**.
 4. Crie novas credenciais do tipo **OpenAI ChatKit API** informando:
    - **API Key**: uma chave da OpenAI com acesso ao beta do Agent Builder / ChatKit.
-   - **Base URL**: opcional, use apenas se estiver utilizando um proxy.
-   - **OpenAI-Beta Header**: valor do cabeçalho exigido pela documentação da OpenAI (por padrão `chatgpt-extensions=2024-10-01`).
+   - **Base URL**: opcional, use apenas se estiver utilizando um proxy. O node injeta automaticamente o cabeçalho `OpenAI-Beta: chatkit_beta=v1` exigido pela API. Informe a URL completa com protocolo (ex.: `https://api.openai.com/v1` ou `https://api.openai.com/v1/chatkit`). O node normaliza o caminho para evitar segmentos duplicados ao chamar os endpoints de sessão.
 
 ### Configuração do node
 
-Ao usar a operação **Create Session** é necessário informar o **Workflow ID** (obtido no Agent Builder) e é possível definir:
+Ao usar a operação **Create Session** informe obrigatoriamente:
 
-- **Instructions**: instruções de sistema do agente.
-- **Session Name**: nome amigável para identificar a sessão.
-- **Default Model**: modelo que será utilizado (ex.: `gpt-4.1-mini`).
-- **Metadata (JSON)**: metadados adicionais em formato JSON.
-- **Tool Configuration**: habilitar busca em arquivos, web search e instruções adicionais de ferramentas.
-- **Additional Fields**: incluir um identificador próprio e escolher a estratégia de merge dos metadados.
+- **Workflow ID**: o identificador `wf_*` gerado pelo Agent Builder.
+- **User ID**: um identificador livre que representa o usuário final (por exemplo um ID de dispositivo, conta ou e-mail). Esse valor é usado pelo ChatKit para compartilhar recursos dentro do mesmo escopo.
 
-A operação **List Sessions** também utiliza o **Workflow ID** para filtrar os resultados. A operação **Get Session** não exige parâmetros adicionais além das credenciais.
+Opcionalmente, você pode ajustar:
+
+- **Workflow Settings**: defina uma versão específica, envie variáveis de estado em JSON e altere o comportamento de tracing.
+- **ChatKit Configuration**: habilite/desabilite histórico, títulos automáticos e uploads, além de limites para arquivos e quantidade de threads visíveis.
+- **Session Options**: personalize o tempo de expiração (em segundos) e o limite de requisições por minuto aceito pela sessão.
+
+A operação **Cancel Session** requer apenas o **Session ID** retornado pela criação da sessão e encerra o chat conforme o endpoint oficial `POST /chatkit/sessions/{session_id}/cancel`.
 
 ### Tratamento de erros
 
-Quando o node é utilizado em fluxos com a opção "Continue On Fail" ativa, eventuais erros de chamada à API serão expostos no campo `error` do item retornado para facilitar o diagnóstico.
+Quando o node é utilizado em fluxos com a opção "Continue On Fail" ativa, eventuais erros de chamada à API serão expostos no campo `error` do item retornado para facilitar o diagnóstico. Respostas de erro retornadas pela OpenAI são repassadas diretamente para ajudar a identificar parâmetros inválidos descritos na [referência da API de sessões](https://platform.openai.com/docs/api-reference/chatkit/sessions/create).
 
 ### Publicação
 

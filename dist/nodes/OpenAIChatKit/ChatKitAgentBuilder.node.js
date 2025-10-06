@@ -69,14 +69,9 @@ class ChatKitAgentBuilder {
                             action: 'Create a ChatKit session',
                         },
                         {
-                            name: 'Get Session',
-                            value: 'getSession',
-                            action: 'Retrieve a ChatKit session',
-                        },
-                        {
-                            name: 'List Sessions',
-                            value: 'listSessions',
-                            action: 'List ChatKit sessions',
+                            name: 'Cancel Session',
+                            value: 'cancelSession',
+                            action: 'Cancel an active ChatKit session',
                         },
                     ],
                     default: 'createSession',
@@ -88,10 +83,216 @@ class ChatKitAgentBuilder {
                     type: 'string',
                     default: '',
                     required: true,
-                    description: 'Identifier of the Agent Builder workflow the session belongs to.',
+                    description: 'Identifier of the Agent Builder workflow that powers the session.',
                     displayOptions: {
                         show: {
-                            operation: ['createSession', 'listSessions'],
+                            operation: ['createSession'],
+                        },
+                    },
+                },
+                {
+                    displayName: 'User ID',
+                    name: 'userId',
+                    type: 'string',
+                    default: '',
+                    required: true,
+                    description: 'Free-form identifier that scopes the session and allows reuse of other ChatKit resources for the same end user.',
+                    displayOptions: {
+                        show: {
+                            operation: ['createSession'],
+                        },
+                    },
+                },
+                {
+                    displayName: 'Workflow Settings',
+                    name: 'workflowSettings',
+                    type: 'collection',
+                    default: {},
+                    placeholder: 'Add workflow option',
+                    options: [
+                        {
+                            displayName: 'Version',
+                            name: 'version',
+                            type: 'string',
+                            default: '',
+                            description: 'Specific workflow version to run. Defaults to the latest deployed version.',
+                        },
+                        {
+                            displayName: 'State Variables (JSON)',
+                            name: 'stateVariables',
+                            type: 'string',
+                            typeOptions: {
+                                rows: 4,
+                            },
+                            default: '',
+                            description: 'Key/value pairs forwarded to the workflow. Provide a JSON object with primitive values.',
+                        },
+                        {
+                            displayName: 'Tracing',
+                            name: 'tracing',
+                            type: 'options',
+                            options: [
+                                {
+                                    name: 'Default (Enabled)',
+                                    value: 'default',
+                                },
+                                {
+                                    name: 'Force Enabled',
+                                    value: 'enabled',
+                                },
+                                {
+                                    name: 'Disable Tracing',
+                                    value: 'disabled',
+                                },
+                            ],
+                            default: 'default',
+                            description: 'Override the workflow tracing behavior for this session.',
+                        },
+                    ],
+                    displayOptions: {
+                        show: {
+                            operation: ['createSession'],
+                        },
+                    },
+                },
+                {
+                    displayName: 'ChatKit Configuration',
+                    name: 'chatkitConfiguration',
+                    type: 'collection',
+                    default: {},
+                    placeholder: 'Customize ChatKit features',
+                    options: [
+                        {
+                            displayName: 'Automatic Thread Titling',
+                            name: 'automaticThreadTitling',
+                            type: 'options',
+                            options: [
+                                {
+                                    name: 'Default (Enabled)',
+                                    value: 'default',
+                                },
+                                {
+                                    name: 'Force Enabled',
+                                    value: 'enabled',
+                                },
+                                {
+                                    name: 'Disable',
+                                    value: 'disabled',
+                                },
+                            ],
+                            default: 'default',
+                            description: 'Control automatic thread title generation.',
+                        },
+                        {
+                            displayName: 'History Access',
+                            name: 'history',
+                            type: 'options',
+                            options: [
+                                {
+                                    name: 'Default (Enabled)',
+                                    value: 'default',
+                                },
+                                {
+                                    name: 'Force Enabled',
+                                    value: 'enabled',
+                                },
+                                {
+                                    name: 'Disable',
+                                    value: 'disabled',
+                                },
+                            ],
+                            default: 'default',
+                            description: 'Decide whether previous ChatKit threads are available to the user.',
+                        },
+                        {
+                            displayName: 'History Recent Threads',
+                            name: 'recentThreads',
+                            type: 'number',
+                            typeOptions: {
+                                minValue: 1,
+                            },
+                            default: 0,
+                            description: 'Limit how many recent threads the user can access. Leave unset for unlimited.',
+                        },
+                        {
+                            displayName: 'File Uploads',
+                            name: 'fileUploads',
+                            type: 'options',
+                            options: [
+                                {
+                                    name: 'Default (Disabled)',
+                                    value: 'default',
+                                },
+                                {
+                                    name: 'Enable',
+                                    value: 'enabled',
+                                },
+                                {
+                                    name: 'Disable',
+                                    value: 'disabled',
+                                },
+                            ],
+                            default: 'default',
+                            description: 'Toggle upload support for the session.',
+                        },
+                        {
+                            displayName: 'File Upload Max Files',
+                            name: 'fileUploadMaxFiles',
+                            type: 'number',
+                            typeOptions: {
+                                minValue: 1,
+                            },
+                            default: 0,
+                            description: 'Maximum files that can be uploaded. Defaults to 10 when uploads are enabled.',
+                        },
+                        {
+                            displayName: 'File Upload Max File Size (MB)',
+                            name: 'fileUploadMaxFileSizeMb',
+                            type: 'number',
+                            typeOptions: {
+                                minValue: 1,
+                            },
+                            default: 0,
+                            description: 'Maximum upload size in megabytes. Defaults to 512 when uploads are enabled.',
+                        },
+                    ],
+                    displayOptions: {
+                        show: {
+                            operation: ['createSession'],
+                        },
+                    },
+                },
+                {
+                    displayName: 'Session Options',
+                    name: 'sessionOptions',
+                    type: 'collection',
+                    default: {},
+                    placeholder: 'Add session option',
+                    options: [
+                        {
+                            displayName: 'Expiration (Seconds)',
+                            name: 'expirationSeconds',
+                            type: 'number',
+                            typeOptions: {
+                                minValue: 1,
+                            },
+                            default: 0,
+                            description: 'Override how long the session stays active after creation. Defaults to 10 minutes.',
+                        },
+                        {
+                            displayName: 'Max Requests Per Minute',
+                            name: 'maxRequestsPerMinute',
+                            type: 'number',
+                            typeOptions: {
+                                minValue: 1,
+                            },
+                            default: 0,
+                            description: 'Override the per-minute request cap. Defaults to 10 when omitted.',
+                        },
+                    ],
+                    displayOptions: {
+                        show: {
+                            operation: ['createSession'],
                         },
                     },
                 },
@@ -101,147 +302,10 @@ class ChatKitAgentBuilder {
                     type: 'string',
                     default: '',
                     required: true,
-                    description: 'The ChatKit session identifier.',
+                    description: 'Identifier of the ChatKit session to cancel.',
                     displayOptions: {
                         show: {
-                            operation: ['getSession'],
-                        },
-                    },
-                },
-                {
-                    displayName: 'Instructions',
-                    name: 'instructions',
-                    type: 'string',
-                    typeOptions: {
-                        rows: 6,
-                    },
-                    default: '',
-                    description: 'System level instructions that steer the behavior of the agent.',
-                    displayOptions: {
-                        show: {
-                            operation: ['createSession'],
-                        },
-                    },
-                },
-                {
-                    displayName: 'Session Name',
-                    name: 'sessionName',
-                    type: 'string',
-                    default: '',
-                    description: 'Optional friendly identifier for the session.',
-                    displayOptions: {
-                        show: {
-                            operation: ['createSession'],
-                        },
-                    },
-                },
-                {
-                    displayName: 'Default Model',
-                    name: 'defaultModel',
-                    type: 'string',
-                    default: 'gpt-4.1-mini',
-                    description: 'Model that should be used by default for this session.',
-                    displayOptions: {
-                        show: {
-                            operation: ['createSession'],
-                        },
-                    },
-                },
-                {
-                    displayName: 'Metadata (JSON)',
-                    name: 'metadata',
-                    type: 'string',
-                    typeOptions: {
-                        rows: 4,
-                    },
-                    default: '',
-                    description: 'Arbitrary metadata to store with the session. Provide a JSON object. Example: {"customer_id": "123"}',
-                    displayOptions: {
-                        show: {
-                            operation: ['createSession'],
-                        },
-                    },
-                },
-                {
-                    displayName: 'Tool Configuration',
-                    name: 'toolConfig',
-                    type: 'collection',
-                    default: {},
-                    placeholder: 'Configure tools',
-                    options: [
-                        {
-                            displayName: 'Enable File Search',
-                            name: 'enableFileSearch',
-                            type: 'boolean',
-                            default: false,
-                            description: 'Attach the file_search tool to the session.',
-                        },
-                        {
-                            displayName: 'File Search Vector Store ID',
-                            name: 'fileSearchVectorStoreId',
-                            type: 'string',
-                            default: '',
-                            description: 'Vector store ID used when file search is enabled.',
-                        },
-                        {
-                            displayName: 'Enable Web Browsing',
-                            name: 'enableWebSearch',
-                            type: 'boolean',
-                            default: false,
-                            description: 'Allow the session to issue web search queries.',
-                        },
-                        {
-                            displayName: 'Additional Tool Instructions',
-                            name: 'additionalInstructions',
-                            type: 'string',
-                            typeOptions: {
-                                rows: 4,
-                            },
-                            default: '',
-                            description: 'Extra instructions scoped to tool usage.',
-                        },
-                    ],
-                    displayOptions: {
-                        show: {
-                            operation: ['createSession'],
-                        },
-                    },
-                },
-                {
-                    displayName: 'Additional Fields',
-                    name: 'additionalFields',
-                    type: 'collection',
-                    placeholder: 'Add field',
-                    default: {},
-                    options: [
-                        {
-                            displayName: 'Client Session ID',
-                            name: 'clientSessionId',
-                            type: 'string',
-                            default: '',
-                            description: 'Custom identifier that you can use to deduplicate session creation calls.',
-                        },
-                        {
-                            displayName: 'Metadata Merge Strategy',
-                            name: 'metadataMergeStrategy',
-                            type: 'options',
-                            options: [
-                                {
-                                    name: 'Replace',
-                                    value: 'replace',
-                                },
-                                {
-                                    name: 'Merge',
-                                    value: 'merge',
-                                },
-                            ],
-                            default: 'replace',
-                            description: 'If set to merge the metadata sent will be deeply merged with the previous metadata instead of replacing it.',
-                        },
-                    ],
-                    displayOptions: {
-                        show: {
-                            operation: ['createSession'],
+                            operation: ['cancelSession'],
                         },
                     },
                 },
@@ -256,100 +320,158 @@ class ChatKitAgentBuilder {
         if (!apiKey) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'No API key returned from credentials.');
         }
-        const baseUrl = (credentials.baseUrl || 'https://api.openai.com/v1').replace(/\/$/, '');
-        const betaHeader = credentials.betaHeader || '';
+        const resolveEndpoint = (suffixSegments, itemIdx) => {
+            const rawBase = (credentials.baseUrl || 'https://api.openai.com/v1').trim();
+            if (!/^https?:\/\//i.test(rawBase)) {
+                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Base URL must include the protocol (e.g. https://api.openai.com/v1).', {
+                    itemIndex: itemIdx,
+                });
+            }
+            let parsedUrl;
+            try {
+                parsedUrl = new URL(rawBase);
+            }
+            catch (error) {
+                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Base URL must be a valid URL.', {
+                    itemIndex: itemIdx,
+                    description: error.message,
+                });
+            }
+            const baseSegments = parsedUrl.pathname.replace(/\/+$/, '').split('/').filter(Boolean);
+            let appendSegments = suffixSegments.filter(Boolean);
+            const lastTwo = baseSegments.slice(-2).join('/');
+            const lastOne = baseSegments.slice(-1)[0];
+            if (lastTwo === 'chatkit/sessions' && appendSegments.slice(0, 2).join('/') === 'chatkit/sessions') {
+                appendSegments = appendSegments.slice(2);
+            }
+            else if (lastOne === 'chatkit' && appendSegments[0] === 'chatkit') {
+                appendSegments = appendSegments.slice(1);
+            }
+            const finalSegments = [...baseSegments, ...appendSegments];
+            parsedUrl.pathname = finalSegments.length ? `/${finalSegments.join('/')}` : '/';
+            parsedUrl.search = '';
+            parsedUrl.hash = '';
+            let url = parsedUrl.toString();
+            if (finalSegments.length) {
+                url = url.replace(/\/$/, '');
+            }
+            return url;
+        };
         for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
             try {
                 const operation = this.getNodeParameter('operation', itemIndex);
                 let requestConfig = {
-                    method: 'GET',
+                    method: 'POST',
                     url: '',
                     headers: {
                         Authorization: `Bearer ${apiKey}`,
                         'Content-Type': 'application/json',
+                        'OpenAI-Beta': 'chatkit_beta=v1',
                     },
                 };
-                if (betaHeader) {
-                    requestConfig.headers['OpenAI-Beta'] = betaHeader;
-                }
                 if (operation === 'createSession') {
                     const workflowId = this.getNodeParameter('workflowId', itemIndex);
-                    const instructions = this.getNodeParameter('instructions', itemIndex, '');
-                    const sessionName = this.getNodeParameter('sessionName', itemIndex, '');
-                    const defaultModel = this.getNodeParameter('defaultModel', itemIndex, '');
-                    const metadata = this.getNodeParameter('metadata', itemIndex, '');
-                    const additionalFields = this.getNodeParameter('additionalFields', itemIndex, {});
-                    const toolConfigRaw = this.getNodeParameter('toolConfig', itemIndex, {});
-                    const body = {
-                        workflow_id: workflowId,
+                    const userId = this.getNodeParameter('userId', itemIndex);
+                    const workflowSettings = this.getNodeParameter('workflowSettings', itemIndex, {});
+                    const chatkitConfigurationRaw = this.getNodeParameter('chatkitConfiguration', itemIndex, {});
+                    const sessionOptions = this.getNodeParameter('sessionOptions', itemIndex, {});
+                    const workflow = {
+                        id: workflowId,
                     };
-                    if (instructions) {
-                        body.instructions = instructions;
+                    const workflowVersion = workflowSettings.version;
+                    if (workflowVersion) {
+                        workflow.version = workflowVersion;
                     }
-                    if (sessionName) {
-                        body.session_name = sessionName;
-                    }
-                    if (defaultModel) {
-                        body.default_model = defaultModel;
-                    }
-                    if (metadata) {
+                    const stateVariables = workflowSettings.stateVariables;
+                    if (stateVariables) {
                         try {
-                            body.metadata = JSON.parse(metadata);
+                            const parsed = JSON.parse(stateVariables);
+                            if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+                                throw new Error('State variables must be provided as a JSON object with primitive values.');
+                            }
+                            workflow.state_variables = parsed;
                         }
                         catch (error) {
-                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Metadata must be valid JSON.', {
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'State variables must be valid JSON.', {
                                 description: error.message,
                                 itemIndex,
                             });
                         }
                     }
-                    if (additionalFields.clientSessionId) {
-                        body.client_session_id = additionalFields.clientSessionId;
+                    const tracingMode = workflowSettings.tracing;
+                    if (tracingMode && tracingMode !== 'default') {
+                        workflow.tracing = {
+                            enabled: tracingMode === 'enabled',
+                        };
                     }
-                    if (additionalFields.metadataMergeStrategy) {
-                        body.metadata_merge_strategy = additionalFields.metadataMergeStrategy;
+                    const body = {
+                        user: userId,
+                        workflow,
+                    };
+                    const chatkitConfiguration = {};
+                    const automaticThreadTitling = chatkitConfigurationRaw.automaticThreadTitling;
+                    if (automaticThreadTitling && automaticThreadTitling !== 'default') {
+                        chatkitConfiguration.automatic_thread_titling = {
+                            enabled: automaticThreadTitling === 'enabled',
+                        };
                     }
-                    const toolConfig = {};
-                    if (toolConfigRaw.enableFileSearch) {
-                        toolConfig.file_search = {};
-                        const vectorStoreId = toolConfigRaw.fileSearchVectorStoreId;
-                        if (vectorStoreId) {
-                            toolConfig.file_search.vector_store_ids = [vectorStoreId];
+                    const historyOption = chatkitConfigurationRaw.history;
+                    const recentThreads = chatkitConfigurationRaw.recentThreads;
+                    if ((historyOption && historyOption !== 'default') || (recentThreads && recentThreads > 0)) {
+                        const history = {};
+                        if (historyOption && historyOption !== 'default') {
+                            history.enabled = historyOption === 'enabled';
                         }
+                        if (recentThreads && recentThreads > 0) {
+                            history.recent_threads = recentThreads;
+                        }
+                        chatkitConfiguration.history = history;
                     }
-                    if (toolConfigRaw.enableWebSearch) {
-                        toolConfig.web_search = { enabled: true };
+                    const fileUploadsOption = chatkitConfigurationRaw.fileUploads;
+                    const maxFiles = chatkitConfigurationRaw.fileUploadMaxFiles;
+                    const maxFileSize = chatkitConfigurationRaw.fileUploadMaxFileSizeMb;
+                    if ((fileUploadsOption && fileUploadsOption !== 'default') ||
+                        (maxFiles && maxFiles > 0) ||
+                        (maxFileSize && maxFileSize > 0)) {
+                        const fileUpload = {};
+                        if (fileUploadsOption && fileUploadsOption !== 'default') {
+                            fileUpload.enabled = fileUploadsOption === 'enabled';
+                        }
+                        if (maxFiles && maxFiles > 0) {
+                            fileUpload.max_files = maxFiles;
+                        }
+                        if (maxFileSize && maxFileSize > 0) {
+                            fileUpload.max_file_size = maxFileSize;
+                        }
+                        chatkitConfiguration.file_upload = fileUpload;
                     }
-                    if (toolConfigRaw.additionalInstructions) {
-                        toolConfig.additional_instructions = toolConfigRaw.additionalInstructions;
+                    if (Object.keys(chatkitConfiguration).length > 0) {
+                        body.chatkit_configuration = chatkitConfiguration;
                     }
-                    if (Object.keys(toolConfig).length > 0) {
-                        body.tool_config = toolConfig;
+                    const expirationSeconds = sessionOptions.expirationSeconds;
+                    if (expirationSeconds && expirationSeconds > 0) {
+                        body.expires_after = {
+                            anchor: 'created_at',
+                            seconds: expirationSeconds,
+                        };
+                    }
+                    const maxRequestsPerMinute = sessionOptions.maxRequestsPerMinute;
+                    if (maxRequestsPerMinute && maxRequestsPerMinute > 0) {
+                        body.rate_limits = {
+                            max_requests_per_1_minute: maxRequestsPerMinute,
+                        };
                     }
                     requestConfig = {
                         ...requestConfig,
-                        method: 'POST',
-                        url: `${baseUrl}/chatkit/sessions`,
+                        url: resolveEndpoint(['chatkit', 'sessions'], itemIndex),
                         data: body,
                     };
                 }
-                else if (operation === 'getSession') {
+                else if (operation === 'cancelSession') {
                     const sessionId = this.getNodeParameter('sessionId', itemIndex);
                     requestConfig = {
                         ...requestConfig,
-                        method: 'GET',
-                        url: `${baseUrl}/chatkit/sessions/${sessionId}`,
-                    };
-                }
-                else if (operation === 'listSessions') {
-                    const workflowId = this.getNodeParameter('workflowId', itemIndex);
-                    requestConfig = {
-                        ...requestConfig,
-                        method: 'GET',
-                        url: `${baseUrl}/chatkit/sessions`,
-                        params: {
-                            workflow_id: workflowId,
-                        },
+                        url: resolveEndpoint(['chatkit', 'sessions', sessionId, 'cancel'], itemIndex),
                     };
                 }
                 else {
