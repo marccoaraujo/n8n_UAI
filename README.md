@@ -9,12 +9,14 @@ Este pacote disponibiliza um node que facilita a integração com o ChatKit do A
 ### Funcionalidades
 
 - Criar uma nova sessão do ChatKit vinculada a um workflow do Agent Builder, informando o identificador do usuário final e customizações opcionais de workflow, limite de requisições e recursos do widget.
+- Consultar detalhes de uma sessão existente a partir do identificador retornado pela API.
+- Listar sessões com filtros por workflow, usuário ou cursores de paginação para auditoria ou reuso de sessões.
 - Cancelar sessões ativas para encerrar o acesso do widget ao workflow quando o chat não for mais necessário.
 
 ### Estrutura do projeto
 
 - `credentials/OpenAiChatKitApi.credentials.ts`: credenciais utilizadas para armazenar a chave de API e demais parâmetros necessários.
-- `nodes/OpenAIChatKit/ChatKitAgentBuilder.node.ts`: implementação principal do node (gera requests `POST /chatkit/sessions` e `POST /chatkit/sessions/{id}/cancel`).
+- `nodes/OpenAIChatKit/ChatKitAgentBuilder.node.ts`: implementação principal do node (gera requests `POST /chatkit/sessions`, `GET /chatkit/sessions/{id}`, `GET /chatkit/sessions` e `POST /chatkit/sessions/{id}/cancel`).
 - `nodes/OpenAIChatKit/openai.svg`: ícone exibido pelo node no editor do n8n.
 
 ### Como utilizar
@@ -51,7 +53,16 @@ Opcionalmente, você pode ajustar:
 - **ChatKit Configuration**: habilite/desabilite histórico, títulos automáticos e uploads, além de limites para arquivos e quantidade de threads visíveis.
 - **Session Options**: personalize o tempo de expiração (em segundos) e o limite de requisições por minuto aceito pela sessão.
 
-A operação **Cancel Session** requer apenas o **Session ID** retornado pela criação da sessão e encerra o chat conforme o endpoint oficial `POST /chatkit/sessions/{session_id}/cancel`.
+A operação **Get Session** permite recuperar os metadados mais recentes de um identificador informado pelo ChatKit utilizando o endpoint `GET /chatkit/sessions/{session_id}`.
+
+Já a operação **List Sessions** aceita filtros opcionais em **List Filters**:
+
+- **Workflow ID**: restringe os resultados a um workflow específico (`workflow_id`).
+- **User ID**: retorna somente sessões ligadas a um usuário final (`user`).
+- **Before/After Cursor**: utiliza os cursores da API para navegar entre páginas de resultados.
+- **Limit**: controla quantos registros são retornados em uma única chamada (padrão do ChatKit quando omitido).
+
+Por fim, a operação **Cancel Session** requer apenas o **Session ID** retornado pela criação da sessão e encerra o chat conforme o endpoint oficial `POST /chatkit/sessions/{session_id}/cancel`.
 
 ### Tratamento de erros
 

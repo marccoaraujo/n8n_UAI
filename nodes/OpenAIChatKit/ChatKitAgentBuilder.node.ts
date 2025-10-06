@@ -46,6 +46,16 @@ export class ChatKitAgentBuilder implements INodeType {
             action: 'Create a ChatKit session',
           },
           {
+            name: 'Get Session',
+            value: 'getSession',
+            action: 'Retrieve a ChatKit session',
+          },
+          {
+            name: 'List Sessions',
+            value: 'listSessions',
+            action: 'List ChatKit sessions',
+          },
+          {
             name: 'Cancel Session',
             value: 'cancelSession',
             action: 'Cancel an active ChatKit session',
@@ -276,15 +286,68 @@ export class ChatKitAgentBuilder implements INodeType {
         },
       },
       {
+        displayName: 'List Filters',
+        name: 'listFilters',
+        type: 'collection',
+        default: {},
+        placeholder: 'Add filter',
+        options: [
+          {
+            displayName: 'Workflow ID',
+            name: 'workflowId',
+            type: 'string',
+            default: '',
+            description: 'Limit results to sessions created from a specific workflow.',
+          },
+          {
+            displayName: 'User ID',
+            name: 'userId',
+            type: 'string',
+            default: '',
+            description: 'Only return sessions scoped to a particular user identifier.',
+          },
+          {
+            displayName: 'Before Cursor',
+            name: 'before',
+            type: 'string',
+            default: '',
+            description: 'Paginate backward from the provided cursor.',
+          },
+          {
+            displayName: 'After Cursor',
+            name: 'after',
+            type: 'string',
+            default: '',
+            description: 'Paginate forward from the provided cursor.',
+          },
+          {
+            displayName: 'Limit',
+            name: 'limit',
+            type: 'number',
+            typeOptions: {
+              minValue: 1,
+              maxValue: 100,
+            },
+            default: 0,
+            description: 'Maximum number of sessions to return (defaults to the API standard when unset).',
+          },
+        ],
+        displayOptions: {
+          show: {
+            operation: ['listSessions'],
+          },
+        },
+      },
+      {
         displayName: 'Session ID',
         name: 'sessionId',
         type: 'string',
         default: '',
         required: true,
-        description: 'Identifier of the ChatKit session to cancel.',
+        description: 'Identifier of the ChatKit session to retrieve or cancel.',
         displayOptions: {
           show: {
-            operation: ['cancelSession'],
+            operation: ['getSession', 'cancelSession'],
           },
         },
       },
@@ -361,7 +424,6 @@ export class ChatKitAgentBuilder implements INodeType {
         const operation = this.getNodeParameter('operation', itemIndex) as string;
 
         let requestConfig: AxiosRequestConfig = {
-          method: 'POST',
           url: '',
           headers: {
             Authorization: `Bearer ${apiKey}`,
@@ -371,6 +433,7 @@ export class ChatKitAgentBuilder implements INodeType {
         };
 
         if (operation === 'createSession') {
+          requestConfig.method = 'POST';
           const workflowId = this.getNodeParameter('workflowId', itemIndex) as string;
           const userId = this.getNodeParameter('userId', itemIndex) as string;
           const workflowSettings = this.getNodeParameter('workflowSettings', itemIndex, {}) as IDataObject;
@@ -478,6 +541,7 @@ export class ChatKitAgentBuilder implements INodeType {
 
           requestConfig = {
             ...requestConfig,
+            method: 'POST',
             url: resolveEndpoint(['chatkit', 'sessions'], itemIndex),
             data: body,
           };
@@ -485,7 +549,50 @@ export class ChatKitAgentBuilder implements INodeType {
           const sessionId = this.getNodeParameter('sessionId', itemIndex) as string;
           requestConfig = {
             ...requestConfig,
+            method: 'POST',
             url: resolveEndpoint(['chatkit', 'sessions', sessionId, 'cancel'], itemIndex),
+          };
+        } else if (operation === 'getSession') {
+          const sessionId = this.getNodeParameter('sessionId', itemIndex) as string;
+          requestConfig = {
+            ...requestConfig,
+            method: 'GET',
+            url: resolveEndpoint(['chatkit', 'sessions', sessionId], itemIndex),
+          };
+        } else if (operation === 'listSessions') {
+          const filters = this.getNodeParameter('listFilters', itemIndex, {}) as IDataObject;
+          const params: IDataObject = {};
+
+          const workflowIdFilter = filters.workflowId as string | undefined;
+          if (workflowIdFilter) {
+            params.workflow_id = workflowIdFilter;
+          }
+
+          const userIdFilter = filters.userId as string | undefined;
+          if (userIdFilter) {
+            params.user = userIdFilter;
+          }
+
+          const beforeCursor = filters.before as string | undefined;
+          if (beforeCursor) {
+            params.before = beforeCursor;
+          }
+
+          const afterCursor = filters.after as string | undefined;
+          if (afterCursor) {
+            params.after = afterCursor;
+          }
+
+          const limit = filters.limit as number | undefined;
+          if (limit && limit > 0) {
+            params.limit = limit;
+          }
+
+          requestConfig = {
+            ...requestConfig,
+            method: 'GET',
+            url: resolveEndpoint(['chatkit', 'sessions'], itemIndex),
+            params: Object.keys(params).length ? params : undefined,
           };
         } else {
           throw new NodeOperationError(this.getNode(), `Unsupported operation: ${operation}`);
