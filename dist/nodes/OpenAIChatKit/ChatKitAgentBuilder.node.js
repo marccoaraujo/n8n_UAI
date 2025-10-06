@@ -1,10 +1,40 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ChatKitAgentBuilder = void 0;
-const axios_1 = __importDefault(require("axios"));
+const axios_1 = __importStar(require("axios"));
 const n8n_workflow_1 = require("n8n-workflow");
 class ChatKitAgentBuilder {
     constructor() {
@@ -51,6 +81,19 @@ class ChatKitAgentBuilder {
                     ],
                     default: 'createSession',
                     description: 'The API operation to execute.',
+                },
+                {
+                    displayName: 'Agent ID',
+                    name: 'agentId',
+                    type: 'string',
+                    default: '',
+                    required: true,
+                    description: 'Identifier of the Agent Builder agent the session belongs to.',
+                    displayOptions: {
+                        show: {
+                            operation: ['createSession', 'listSessions'],
+                        },
+                    },
                 },
                 {
                     displayName: 'Session ID',
@@ -230,13 +273,16 @@ class ChatKitAgentBuilder {
                     requestConfig.headers['OpenAI-Beta'] = betaHeader;
                 }
                 if (operation === 'createSession') {
+                    const agentId = this.getNodeParameter('agentId', itemIndex);
                     const instructions = this.getNodeParameter('instructions', itemIndex, '');
                     const sessionName = this.getNodeParameter('sessionName', itemIndex, '');
                     const defaultModel = this.getNodeParameter('defaultModel', itemIndex, '');
                     const metadata = this.getNodeParameter('metadata', itemIndex, '');
                     const additionalFields = this.getNodeParameter('additionalFields', itemIndex, {});
                     const toolConfigRaw = this.getNodeParameter('toolConfig', itemIndex, {});
-                    const body = {};
+                    const body = {
+                        agent_id: agentId,
+                    };
                     if (instructions) {
                         body.instructions = instructions;
                     }
@@ -296,10 +342,14 @@ class ChatKitAgentBuilder {
                     };
                 }
                 else if (operation === 'listSessions') {
+                    const agentId = this.getNodeParameter('agentId', itemIndex);
                     requestConfig = {
                         ...requestConfig,
                         method: 'GET',
                         url: `${baseUrl}/chatkit/sessions`,
+                        params: {
+                            agent_id: agentId,
+                        },
                     };
                 }
                 else {
@@ -312,6 +362,28 @@ class ChatKitAgentBuilder {
                 if (this.continueOnFail()) {
                     returnData.push({ json: { error: error.message } });
                     continue;
+                }
+                if ((0, axios_1.isAxiosError)(error) && error.response) {
+                    const responseData = error.response.data;
+                    let message = error.message;
+                    if (responseData) {
+                        if (typeof responseData === 'string') {
+                            message = responseData;
+                        }
+                        else if (typeof responseData.error === 'string') {
+                            message = responseData.error;
+                        }
+                        else if (responseData.error &&
+                            typeof responseData.error.message === 'string') {
+                            message = responseData.error.message;
+                        }
+                        else {
+                            message = JSON.stringify(responseData);
+                        }
+                    }
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), message, {
+                        itemIndex,
+                    });
                 }
                 throw error;
             }
