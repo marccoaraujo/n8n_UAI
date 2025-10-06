@@ -61,12 +61,12 @@ export class ChatKitAgentBuilder implements INodeType {
         description: 'The API operation to execute.',
       },
       {
-        displayName: 'Agent ID',
-        name: 'agentId',
+        displayName: 'Workflow ID',
+        name: 'workflowId',
         type: 'string',
         default: '',
         required: true,
-        description: 'Identifier of the Agent Builder agent the session belongs to.',
+        description: 'Identifier of the Agent Builder workflow the session belongs to.',
         displayOptions: {
           show: {
             operation: ['createSession', 'listSessions'],
@@ -261,7 +261,7 @@ export class ChatKitAgentBuilder implements INodeType {
         }
 
         if (operation === 'createSession') {
-          const agentId = this.getNodeParameter('agentId', itemIndex) as string;
+          const workflowId = this.getNodeParameter('workflowId', itemIndex) as string;
           const instructions = this.getNodeParameter('instructions', itemIndex, '') as string;
           const sessionName = this.getNodeParameter('sessionName', itemIndex, '') as string;
           const defaultModel = this.getNodeParameter('defaultModel', itemIndex, '') as string;
@@ -270,7 +270,7 @@ export class ChatKitAgentBuilder implements INodeType {
           const toolConfigRaw = this.getNodeParameter('toolConfig', itemIndex, {}) as IDataObject;
 
           const body: IDataObject = {
-            agent_id: agentId,
+            workflow_id: workflowId,
           };
 
           if (instructions) {
@@ -340,13 +340,13 @@ export class ChatKitAgentBuilder implements INodeType {
             url: `${baseUrl}/chatkit/sessions/${sessionId}`,
           };
         } else if (operation === 'listSessions') {
-          const agentId = this.getNodeParameter('agentId', itemIndex) as string;
+          const workflowId = this.getNodeParameter('workflowId', itemIndex) as string;
           requestConfig = {
             ...requestConfig,
             method: 'GET',
             url: `${baseUrl}/chatkit/sessions`,
             params: {
-              agent_id: agentId,
+              workflow_id: workflowId,
             },
           };
         } else {

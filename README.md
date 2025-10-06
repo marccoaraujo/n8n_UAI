@@ -8,7 +8,7 @@ Este pacote disponibiliza um node que facilita a integração com o ChatKit do A
 
 ### Funcionalidades
 
-- Criar uma nova sessão do ChatKit com instruções personalizadas, modelo padrão e configurações de ferramentas.
+- Criar uma nova sessão do ChatKit vinculada a um workflow do Agent Builder com instruções personalizadas, modelo padrão e configurações de ferramentas.
 - Recuperar os detalhes de uma sessão existente a partir do ID.
 - Listar as sessões disponíveis na sua conta.
 
@@ -42,7 +42,7 @@ Este pacote disponibiliza um node que facilita a integração com o ChatKit do A
 
 ### Configuração do node
 
-Ao usar a operação **Create Session** é possível definir:
+Ao usar a operação **Create Session** é necessário informar o **Workflow ID** (obtido no Agent Builder) e é possível definir:
 
 - **Instructions**: instruções de sistema do agente.
 - **Session Name**: nome amigável para identificar a sessão.
@@ -51,7 +51,7 @@ Ao usar a operação **Create Session** é possível definir:
 - **Tool Configuration**: habilitar busca em arquivos, web search e instruções adicionais de ferramentas.
 - **Additional Fields**: incluir um identificador próprio e escolher a estratégia de merge dos metadados.
 
-As operações **Get Session** e **List Sessions** não exigem parâmetros adicionais além das credenciais.
+A operação **List Sessions** também utiliza o **Workflow ID** para filtrar os resultados. A operação **Get Session** não exige parâmetros adicionais além das credenciais.
 
 ### Tratamento de erros
 

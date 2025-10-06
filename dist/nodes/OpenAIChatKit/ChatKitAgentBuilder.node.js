@@ -83,12 +83,12 @@ class ChatKitAgentBuilder {
                     description: 'The API operation to execute.',
                 },
                 {
-                    displayName: 'Agent ID',
-                    name: 'agentId',
+                    displayName: 'Workflow ID',
+                    name: 'workflowId',
                     type: 'string',
                     default: '',
                     required: true,
-                    description: 'Identifier of the Agent Builder agent the session belongs to.',
+                    description: 'Identifier of the Agent Builder workflow the session belongs to.',
                     displayOptions: {
                         show: {
                             operation: ['createSession', 'listSessions'],
@@ -273,7 +273,7 @@ class ChatKitAgentBuilder {
                     requestConfig.headers['OpenAI-Beta'] = betaHeader;
                 }
                 if (operation === 'createSession') {
-                    const agentId = this.getNodeParameter('agentId', itemIndex);
+                    const workflowId = this.getNodeParameter('workflowId', itemIndex);
                     const instructions = this.getNodeParameter('instructions', itemIndex, '');
                     const sessionName = this.getNodeParameter('sessionName', itemIndex, '');
                     const defaultModel = this.getNodeParameter('defaultModel', itemIndex, '');
@@ -281,7 +281,7 @@ class ChatKitAgentBuilder {
                     const additionalFields = this.getNodeParameter('additionalFields', itemIndex, {});
                     const toolConfigRaw = this.getNodeParameter('toolConfig', itemIndex, {});
                     const body = {
-                        agent_id: agentId,
+                        workflow_id: workflowId,
                     };
                     if (instructions) {
                         body.instructions = instructions;
@@ -342,13 +342,13 @@ class ChatKitAgentBuilder {
                     };
                 }
                 else if (operation === 'listSessions') {
-                    const agentId = this.getNodeParameter('agentId', itemIndex);
+                    const workflowId = this.getNodeParameter('workflowId', itemIndex);
                     requestConfig = {
                         ...requestConfig,
                         method: 'GET',
                         url: `${baseUrl}/chatkit/sessions`,
                         params: {
-                            agent_id: agentId,
+                            workflow_id: workflowId,
                         },
                     };
                 }
