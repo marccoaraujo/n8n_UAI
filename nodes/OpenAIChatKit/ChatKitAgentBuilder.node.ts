@@ -138,6 +138,27 @@ async function chatKitRequest(
   let url: string;
 
   try {
+    const trimmedEndpoint = endpoint.trim();
+
+    if (!trimmedEndpoint) {
+      throw new Error('Endpoint path is empty');
+    }
+
+    let endpointPath = trimmedEndpoint;
+
+    if (!/^https?:\/\//i.test(endpointPath)) {
+      endpointPath = endpointPath.startsWith('/') ? endpointPath : `/${endpointPath}`;
+    }
+
+    url = new URL(endpointPath, baseUrlString).toString();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Invalid base URL';
+    throw new NodeOperationError(this.getNode(), `Failed to resolve ChatKit URL: ${message}`, {
+      itemIndex,
+    });
+  }
+
+  try {
     const baseUrl = new URL(baseUrlString);
     const baseSegments = baseUrl.pathname
       .split('/')

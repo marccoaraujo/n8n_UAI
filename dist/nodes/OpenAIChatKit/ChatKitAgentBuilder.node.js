@@ -110,6 +110,23 @@ async function chatKitRequest(itemIndex, method, endpoint, body, timeout) {
     const baseUrlString = credentials.baseUrl?.trim() || 'https://api.openai.com';
     let url;
     try {
+        const trimmedEndpoint = endpoint.trim();
+        if (!trimmedEndpoint) {
+            throw new Error('Endpoint path is empty');
+        }
+        let endpointPath = trimmedEndpoint;
+        if (!/^https?:\/\//i.test(endpointPath)) {
+            endpointPath = endpointPath.startsWith('/') ? endpointPath : `/${endpointPath}`;
+        }
+        url = new URL(endpointPath, baseUrlString).toString();
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : 'Invalid base URL';
+        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to resolve ChatKit URL: ${message}`, {
+            itemIndex,
+        });
+    }
+    try {
         const baseUrl = new URL(baseUrlString);
         const baseSegments = baseUrl.pathname
             .split('/')
