@@ -49,6 +49,8 @@ Crie credenciais do tipo **OpenAI ChatKit Proxy API** com as seguintes proprieda
 
 A chave real da OpenAI deve permanecer no backend proxy; o n8n nunca envia o segredo diretamente para a OpenAI.
 
+> Dica: a rota de criação de sessão esperada pelo nó é `POST /session`. Caso siga o guia oficial, exponha os endpoints `/session`, `/session/refresh` e `/message/send` (ou ajuste o proxy para mapear para esses caminhos).
+
 ### Recursos e operações
 
 O nó expõe três recursos principais:

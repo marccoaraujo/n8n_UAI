@@ -609,7 +609,7 @@ class ChatKitAgentBuilder {
                             ...(userId ? { userId } : {}),
                             ...(metadata ? { metadata } : {}),
                         };
-                        const response = await proxyRequest.call(this, itemIndex, 'POST', 'session/create', payload);
+                        const response = await proxyRequest.call(this, itemIndex, 'POST', 'session', payload);
                         const session = response.session;
                         if (!session?.id || typeof session.client_secret !== 'string') {
                             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Session creation failed: response did not include id and client_secret.', { itemIndex });

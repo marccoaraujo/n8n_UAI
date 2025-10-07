@@ -712,7 +712,7 @@ export class ChatKitAgentBuilder implements INodeType {
               this,
               itemIndex,
               'POST',
-              'session/create',
+              'session',
               payload,
             );
 
