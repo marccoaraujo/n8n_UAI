@@ -67,6 +67,6 @@ If an account still serves the earlier `/v1/chat/sessions` routes, the node auto
 
 The repository ships a GitHub Actions workflow (`.github/workflows/release.yml`) that publishes the package to npm whenever a `v*.*.*` tag is pushed. The workflow runs `npm ci`, `npm run build`, and `npm publish --provenance` using the configured `NPM_TOKEN` secret.
 
-## License
+## 📄 License
 
-MIT
+This project is licensed under the **MIT License**. See the LICENSE file for more details.
