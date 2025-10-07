@@ -107,9 +107,35 @@ async function chatKitRequest(itemIndex, method, endpoint, body, timeout) {
             itemIndex,
         });
     }
-    const baseUrl = (credentials.baseUrl || 'https://api.openai.com').replace(/\/+$/u, '');
-    const path = endpoint.replace(/^\/+/, '');
-    const url = `${baseUrl}/${path}`;
+    const baseUrlString = credentials.baseUrl?.trim() || 'https://api.openai.com';
+    let url;
+    try {
+        const baseUrl = new URL(baseUrlString);
+        const baseSegments = baseUrl.pathname
+            .split('/')
+            .map((segment) => segment.trim())
+            .filter((segment) => segment.length > 0);
+        const endpointSegments = endpoint
+            .split('/')
+            .map((segment) => segment.trim())
+            .filter((segment) => segment.length > 0);
+        let effectiveEndpointSegments = endpointSegments;
+        if (baseSegments.length > 0 && endpointSegments.length >= baseSegments.length) {
+            const hasDuplicatePrefix = baseSegments.every((segment, index) => endpointSegments[index] === segment);
+            if (hasDuplicatePrefix) {
+                effectiveEndpointSegments = endpointSegments.slice(baseSegments.length);
+            }
+        }
+        const combinedPathSegments = [...baseSegments, ...effectiveEndpointSegments];
+        baseUrl.pathname = `/${combinedPathSegments.join('/')}`;
+        url = baseUrl.toString();
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : 'Invalid base URL';
+        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to resolve ChatKit URL: ${message}`, {
+            itemIndex,
+        });
+    }
     try {
         const response = await axios_1.default.request({
             method,
