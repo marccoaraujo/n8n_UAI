@@ -179,7 +179,7 @@ export class ChatKitAgentBuilder implements INodeType {
   description: INodeTypeDescription = {
     displayName: 'OpenAI ChatKit',
     name: 'chatKitAgentBuilder',
-    icon: 'file:openai.svg',
+    icon: 'file:dynamics-labs.svg',
     group: ['transform'],
     version: 1,
     description: 'Talk to Agent Builder workflows through the ChatKit beta.',
