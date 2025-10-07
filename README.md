@@ -55,11 +55,13 @@ Create credentials of type **OpenAI ChatKit API** with the following fields:
 
 The node issues the following REST requests against the configured base URL:
 
-- `POST /v1/chat/sessions`
-- `POST /v1/chat/sessions/{session_id}/refresh`
-- `POST /v1/chat/sessions/{session_id}/messages`
+- `POST /v1/chatkit/sessions`
+- `POST /v1/chatkit/sessions/{session_id}/refresh`
+- `POST /v1/chatkit/sessions/{session_id}/messages`
 
-Each request includes the `OpenAI-Beta: chatkit_beta=v1` header required for the ChatKit preview.
+If an account still serves the earlier `/v1/chat/sessions` routes, the node automatically retries against those paths so you do not have to adjust any settings. Each request includes the `OpenAI-Beta: chatkit_beta=v1` header required for the ChatKit preview.
+
+> Looking for end-to-end samples? The [openai-chatkit-starter-app](https://github.com/openai/openai-chatkit-starter-app) and [openai-chatkit-advanced-samples](https://github.com/openai/openai-chatkit-advanced-samples) repositories demonstrate how the workflows respond to these APIs.
 
 ## Publishing
 

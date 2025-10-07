@@ -181,41 +181,156 @@ async function chatKitRequest(itemIndex, method, endpoint, body, timeout) {
         });
     }
     try {
-        const response = await axios_1.default.request({
-            method,
-            url,
-            data: body,
-            timeout,
-            headers: {
-                Authorization: `Bearer ${credentials.apiKey}`,
-                'Content-Type': 'application/json',
-                'OpenAI-Beta': 'chatkit_beta=v1',
-                ...(credentials.organization ? { 'OpenAI-Organization': credentials.organization } : {}),
-                ...(credentials.projectId ? { 'OpenAI-Project': credentials.projectId } : {}),
-            },
-        });
-        return response.data ?? {};
+        let endpointValue;
+        if (endpoint instanceof URL) {
+            endpointValue = endpoint.toString();
+        }
+        else if (Array.isArray(endpoint)) {
+            endpointValue = endpoint.join('/');
+        }
+        else {
+            endpointValue = endpoint;
+        }
+        if (typeof endpointValue !== 'string') {
+            throw new Error('Endpoint must be a string or URL.');
+        }
+        const trimmedEndpoint = endpointValue.trim();
+        if (!trimmedEndpoint) {
+            throw new Error('Endpoint path is empty');
+        }
+        let endpointPath = trimmedEndpoint;
+        if (!/^https?:\/\//i.test(endpointPath)) {
+            endpointPath = endpointPath.startsWith('/') ? endpointPath : `/${endpointPath}`;
+        }
+        url = new URL(endpointPath, baseUrlString).toString();
     }
     catch (error) {
-        if ((0, axios_1.isAxiosError)(error)) {
-            const status = error.response?.status;
-            const description = typeof error.response?.data === 'string'
-                ? error.response?.data
-                : JSON.stringify(error.response?.data ?? {});
-            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `ChatKit request failed${status ? ` (HTTP ${status})` : ''}: ${error.message}`, {
-                itemIndex,
-                description,
-            });
-        }
-        throw error;
+        const message = error instanceof Error ? error.message : 'Invalid base URL';
+        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to resolve ChatKit URL: ${message}`, {
+            itemIndex,
+        });
     }
+    try {
+        const trimmedEndpoint = endpoint.trim();
+        if (!trimmedEndpoint) {
+            throw new Error('Endpoint path is empty');
+        }
+        let endpointPath = trimmedEndpoint;
+        if (!/^https?:\/\//i.test(endpointPath)) {
+            endpointPath = endpointPath.startsWith('/') ? endpointPath : `/${endpointPath}`;
+        }
+        url = new URL(endpointPath, baseUrlString).toString();
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : 'Invalid base URL';
+        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to resolve ChatKit URL: ${message}`, {
+            itemIndex,
+        });
+    }
+    try {
+        const baseUrl = new URL(baseUrlString);
+        const baseSegments = baseUrl.pathname
+            .split('/')
+            .map((segment) => segment.trim())
+            .filter((segment) => segment.length > 0);
+        const endpointSegments = endpoint
+            .split('/')
+            .map((segment) => segment.trim())
+            .filter((segment) => segment.length > 0);
+        let overlap = 0;
+        for (let candidate = Math.min(baseSegments.length, endpointSegments.length); candidate > 0; candidate -= 1) {
+            const baseSuffix = baseSegments.slice(baseSegments.length - candidate);
+            const endpointPrefix = endpointSegments.slice(0, candidate);
+            const matches = baseSuffix.every((segment, index) => segment === endpointPrefix[index]);
+            if (matches) {
+                overlap = candidate;
+                break;
+            }
+        }
+        const combinedPathSegments = [...baseSegments, ...endpointSegments.slice(overlap)];
+        baseUrl.pathname = combinedPathSegments.length > 0 ? `/${combinedPathSegments.join('/')}` : '/';
+        url = baseUrl.toString();
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : 'Invalid base URL';
+        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to resolve ChatKit URL: ${message}`, {
+            itemIndex,
+        });
+    }
+    try {
+        baseUrl = new URL(baseUrlString);
+    }
+    catch (error) {
+        throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Invalid ChatKit base URL. Please include the protocol (e.g. https://).', {
+            itemIndex,
+        });
+    }
+    const basePath = baseUrl.pathname.replace(/\/+$/u, '');
+    const endpoints = Array.isArray(endpoint) ? endpoint : [endpoint];
+    let storedError;
+    for (let index = 0; index < endpoints.length; index++) {
+        const candidate = endpoints[index];
+        const endpointPath = candidate.startsWith('/') ? candidate : `/${candidate}`;
+        let finalPath;
+        if (!basePath || endpointPath === basePath || endpointPath.startsWith(`${basePath}/`)) {
+            finalPath = endpointPath;
+        }
+        else {
+            finalPath = `${basePath}/${endpointPath.replace(/^\/+/, '')}`;
+        }
+        finalPath = finalPath.replace(/\/+/gu, '/');
+        if (!finalPath.startsWith('/')) {
+            finalPath = `/${finalPath}`;
+        }
+        const url = `${baseUrl.origin}${finalPath}`;
+        try {
+            const response = await axios_1.default.request({
+                method,
+                url,
+                data: body,
+                timeout,
+                headers: {
+                    Authorization: `Bearer ${credentials.apiKey}`,
+                    'Content-Type': 'application/json',
+                    'OpenAI-Beta': 'chatkit_beta=v1',
+                    ...(credentials.organization ? { 'OpenAI-Organization': credentials.organization } : {}),
+                    ...(credentials.projectId ? { 'OpenAI-Project': credentials.projectId } : {}),
+                },
+            });
+            return response.data ?? {};
+        }
+        catch (error) {
+            if ((0, axios_1.isAxiosError)(error)) {
+                const status = error.response?.status;
+                const description = typeof error.response?.data === 'string'
+                    ? error.response?.data
+                    : JSON.stringify(error.response?.data ?? {});
+                const nodeError = new n8n_workflow_1.NodeOperationError(this.getNode(), `ChatKit request failed${status ? ` (HTTP ${status})` : ''}: ${error.message}`, {
+                    itemIndex,
+                    description,
+                });
+                if (status === 404 && index < endpoints.length - 1) {
+                    storedError = nodeError;
+                    continue;
+                }
+                throw nodeError;
+            }
+            throw error;
+        }
+    }
+    if (storedError) {
+        throw storedError;
+    }
+    throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'ChatKit request failed: no valid endpoint responded.', {
+        itemIndex,
+    });
 }
 class ChatKitAgentBuilder {
     constructor() {
         this.description = {
             displayName: 'OpenAI ChatKit',
             name: 'chatKitAgentBuilder',
-            icon: 'file:openai.svg',
+            icon: 'file:dynamics-labs.svg',
             group: ['transform'],
             version: 1,
             description: 'Talk to Agent Builder workflows through the ChatKit beta.',
@@ -558,12 +673,12 @@ class ChatKitAgentBuilder {
                     const metadata = parseJsonParameter.call(this, 'sessionMetadata', itemIndex);
                     const options = parseJsonParameter.call(this, 'sessionOptions', itemIndex);
                     const body = {
-                        workflow_id: workflowId,
-                        ...(userId ? { user_id: userId } : {}),
+                        workflow: { id: workflowId },
+                        ...(userId ? { user: userId } : {}),
                         ...(metadata ? { metadata } : {}),
                         ...(options ? { session_options: options } : {}),
                     };
-                    const response = await chatKitRequest.call(this, itemIndex, 'POST', '/v1/chat/sessions', body);
+                    const response = await chatKitRequest.call(this, itemIndex, 'POST', ['/v1/chatkit/sessions', '/v1/chat/sessions'], body);
                     const sessionPayload = response.session ?? response;
                     const sessionId = sessionPayload.id;
                     const clientSecret = (sessionPayload.client_secret ?? sessionPayload.clientSecret);
@@ -592,7 +707,10 @@ class ChatKitAgentBuilder {
                 }
                 if (operation === 'refresh') {
                     const session = ensureSession.call(this, itemIndex, state);
-                    const endpoint = `/v1/chat/sessions/${encodeURIComponent(session.id)}/refresh`;
+                    const endpoint = [
+                        `/v1/chatkit/sessions/${encodeURIComponent(session.id)}/refresh`,
+                        `/v1/chat/sessions/${encodeURIComponent(session.id)}/refresh`,
+                    ];
                     const body = {
                         client_secret: session.clientSecret,
                     };
@@ -674,7 +792,7 @@ class ChatKitAgentBuilder {
                 ];
                 const payload = {
                     client_secret: clientSecret,
-                    workflow_id: workflowId,
+                    workflow: { id: workflowId },
                     messages: [
                         {
                             role,
@@ -685,7 +803,10 @@ class ChatKitAgentBuilder {
                     ...(systemPrompt ? { system_prompt: systemPrompt } : {}),
                     ...(metadata ? { metadata } : {}),
                 };
-                const endpoint = `/v1/chat/sessions/${encodeURIComponent(sessionId)}/messages`;
+                const endpoint = [
+                    `/v1/chatkit/sessions/${encodeURIComponent(sessionId)}/messages`,
+                    `/v1/chat/sessions/${encodeURIComponent(sessionId)}/messages`,
+                ];
                 const response = await chatKitRequest.call(this, itemIndex, 'POST', endpoint, payload, timeout);
                 const sanitized = sanitizeResponse(response);
                 if (source === 'stored') {
