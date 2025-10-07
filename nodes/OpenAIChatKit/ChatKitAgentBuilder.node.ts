@@ -134,9 +134,29 @@ async function chatKitRequest(
     });
   }
 
-  const baseUrl = (credentials.baseUrl || 'https://api.openai.com').replace(/\/+$/u, '');
-  const path = endpoint.replace(/^\/+/, '');
-  const url = `${baseUrl}/${path}`;
+  const baseUrlString = credentials.baseUrl?.trim() || 'https://api.openai.com';
+  let url: string;
+
+  try {
+    const trimmedEndpoint = endpoint.trim();
+
+    if (!trimmedEndpoint) {
+      throw new Error('Endpoint path is empty');
+    }
+
+    let endpointPath = trimmedEndpoint;
+
+    if (!/^https?:\/\//i.test(endpointPath)) {
+      endpointPath = endpointPath.startsWith('/') ? endpointPath : `/${endpointPath}`;
+    }
+
+    url = new URL(endpointPath, baseUrlString).toString();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Invalid base URL';
+    throw new NodeOperationError(this.getNode(), `Failed to resolve ChatKit URL: ${message}`, {
+      itemIndex,
+    });
+  }
 
   try {
     const response = await axios.request<IDataObject>({
