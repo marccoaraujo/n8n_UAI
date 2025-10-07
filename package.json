@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-openai-chatkit",
-  "version": "1.0.11",
+  "version": "1.0.19",
   "description": "Custom n8n node to manage OpenAI Agent Builder ChatKit sessions.",
   "keywords": [
     "n8n",
