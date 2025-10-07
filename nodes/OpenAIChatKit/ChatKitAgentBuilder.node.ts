@@ -1,6 +1,4 @@
-
-import axios, { isAxiosError, type AxiosRequestConfig } from 'axios';
-import { randomUUID } from 'crypto';
+import axios, { isAxiosError } from 'axios';
 import {
   NodeOperationError,
   type IDataObject,
@@ -10,38 +8,27 @@ import {
   type INodeTypeDescription,
 } from 'n8n-workflow';
 
-interface ChatKitProxyCredentials {
-  serverProxyBaseUrl: string;
-  apiKey?: string;
-  projectId?: string;
+interface ChatKitCredentials {
+  apiKey: string;
+  baseUrl?: string;
   organization?: string;
+  projectId?: string;
 }
 
-interface PersistedSession {
+interface StoredSession {
   id: string;
   clientSecret: string;
   expiresAt?: string;
   workflowId?: string;
-  userId?: string;
 }
 
-interface PersistedThread {
-  id: string;
+interface ChatKitState {
+  session?: StoredSession;
 }
 
-interface PersistedState {
-  session?: PersistedSession;
-  thread?: PersistedThread;
-}
+const STATE_KEY = 'chatkitState';
 
-const SESSION_REFRESH_THRESHOLD_MS = 60_000;
-const CHATKIT_STATE_KEY = 'chatkitState';
-
-function maskClientSecret(secret?: string): string | undefined {
-  if (!secret) {
-    return secret;
-  }
-
+function maskSecret(secret: string): string {
   if (secret.length <= 8) {
     return `${secret.slice(0, 2)}***${secret.slice(-1)}`;
   }
@@ -49,47 +36,53 @@ function maskClientSecret(secret?: string): string | undefined {
   return `${secret.slice(0, 4)}***${secret.slice(-4)}`;
 }
 
-function ensurePersistedState(this: IExecuteFunctions): PersistedState {
-  const staticData = this.getWorkflowStaticData('node') as IDataObject;
-  if (!staticData[CHATKIT_STATE_KEY]) {
-    staticData[CHATKIT_STATE_KEY] = {};
-  }
-  return staticData[CHATKIT_STATE_KEY] as PersistedState;
-}
+function getState(this: IExecuteFunctions): ChatKitState {
+  const data = this.getWorkflowStaticData('node') as IDataObject;
 
-function savePersistedState(this: IExecuteFunctions, state: PersistedState) {
-  const staticData = this.getWorkflowStaticData('node') as IDataObject;
-  staticData[CHATKIT_STATE_KEY] = state;
-}
-
-function resolveUrl(baseUrl: string, endpoint: string): string {
-  const trimmedBase = baseUrl.replace(/\/+$/u, '');
-  const trimmedEndpoint = endpoint.replace(/^\/+/, '');
-  return `${trimmedBase}/${trimmedEndpoint}`;
-}
-
-function sanitizePayload(payload: IDataObject): IDataObject {
-  const clone = JSON.parse(JSON.stringify(payload)) as IDataObject;
-  const session = clone.session as IDataObject | undefined;
-
-  if (session) {
-    if (typeof session.client_secret === 'string') {
-      session.client_secret = maskClientSecret(session.client_secret) as string;
-    }
-    if (typeof session.clientSecret === 'string') {
-      session.clientSecret = maskClientSecret(session.clientSecret) as string;
-    }
+  if (!data[STATE_KEY]) {
+    data[STATE_KEY] = {};
   }
 
-  return clone;
+  const rawState = data[STATE_KEY] as IDataObject;
+  const session = rawState.session as IDataObject | undefined;
+
+  if (session?.id && session.clientSecret) {
+    return {
+      session: {
+        id: session.id as string,
+        clientSecret: session.clientSecret as string,
+        expiresAt: session.expiresAt as string | undefined,
+        workflowId: session.workflowId as string | undefined,
+      },
+    };
+  }
+
+  return {};
 }
 
-function parseJsonObjectParameter(
+function saveState(this: IExecuteFunctions, state: ChatKitState) {
+  const data = this.getWorkflowStaticData('node') as IDataObject;
+  data[STATE_KEY] = state;
+}
+
+function ensureSession(this: IExecuteFunctions, itemIndex: number, state: ChatKitState): StoredSession {
+  if (!state.session) {
+    throw new NodeOperationError(
+      this.getNode(),
+      'No ChatKit session stored. Run the Session → Create operation first or provide manual credentials.',
+      { itemIndex },
+    );
+  }
+
+  return state.session;
+}
+
+function parseJsonParameter(
   this: IExecuteFunctions,
-  paramName: string,
+  name: string,
   itemIndex: number,
 ): IDataObject | undefined {
-  const raw = this.getNodeParameter(paramName, itemIndex, '') as string;
+  const raw = this.getNodeParameter(name, itemIndex, '') as string;
 
   if (!raw) {
     return undefined;
@@ -98,222 +91,98 @@ function parseJsonObjectParameter(
   try {
     const parsed = JSON.parse(raw) as unknown;
 
-    if (parsed === null || Array.isArray(parsed) || typeof parsed !== 'object') {
-      throw new Error('Expected a JSON object.');
+    if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+      throw new Error('Expected a JSON object');
     }
 
     return parsed as IDataObject;
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Invalid JSON';
-    throw new NodeOperationError(this.getNode(), `Failed to parse ${paramName}: ${message}`, {
-      itemIndex,
-    });
+    throw new NodeOperationError(this.getNode(), `Failed to parse ${name}: ${message}`, { itemIndex });
   }
 }
 
-async function proxyRequest(
+function sanitizeResponse(payload: IDataObject): IDataObject {
+  const clone = JSON.parse(JSON.stringify(payload)) as IDataObject;
+
+  const session = clone.session as IDataObject | undefined;
+
+  if (session?.client_secret && typeof session.client_secret === 'string') {
+    session.client_secret = maskSecret(session.client_secret);
+  }
+
+  if (clone.client_secret && typeof clone.client_secret === 'string') {
+    clone.client_secret = maskSecret(clone.client_secret);
+  }
+
+  return clone;
+}
+
+async function chatKitRequest(
   this: IExecuteFunctions,
   itemIndex: number,
-  method: AxiosRequestConfig['method'],
+  method: 'GET' | 'POST' | 'DELETE',
   endpoint: string,
   body?: IDataObject,
   timeout?: number,
 ): Promise<IDataObject> {
-  const credentials = (await this.getCredentials('openAiChatKitApi')) as
-    | ChatKitProxyCredentials
-    | undefined;
+  const credentials = (await this.getCredentials('openAiChatKitApi')) as ChatKitCredentials | undefined;
 
-  if (!credentials?.serverProxyBaseUrl) {
-    throw new NodeOperationError(
-      this.getNode(),
-      'The ChatKit credentials must include a Server Proxy Base URL.',
-      {
-        itemIndex,
-      },
-    );
-  }
-
-  let baseUrl: string;
-
-  try {
-    const resolved = new URL(credentials.serverProxyBaseUrl);
-    baseUrl = resolved.toString();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Invalid URL';
-    throw new NodeOperationError(this.getNode(), `Invalid Server Proxy Base URL: ${message}`, {
+  if (!credentials?.apiKey) {
+    throw new NodeOperationError(this.getNode(), 'OpenAI ChatKit credentials are required.', {
       itemIndex,
     });
   }
 
-  const url = resolveUrl(baseUrl, endpoint);
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
-
-  if (credentials.apiKey) {
-    headers.Authorization = `Bearer ${credentials.apiKey}`;
-  }
-
-  if (credentials.projectId) {
-    headers['X-Project-Id'] = credentials.projectId;
-  }
-
-  if (credentials.organization) {
-    headers['X-Organization-Id'] = credentials.organization;
-  }
-
-  const requestConfig: AxiosRequestConfig = {
-    method,
-    url,
-    headers,
-    data: body,
-    timeout,
-  };
+  const baseUrl = (credentials.baseUrl || 'https://api.openai.com').replace(/\/+$/u, '');
+  const path = endpoint.replace(/^\/+/, '');
+  const url = `${baseUrl}/${path}`;
 
   try {
-    const response = await axios.request(requestConfig);
-    return (response.data ?? {}) as IDataObject;
+    const response = await axios.request<IDataObject>({
+      method,
+      url,
+      data: body,
+      timeout,
+      headers: {
+        Authorization: `Bearer ${credentials.apiKey}`,
+        'Content-Type': 'application/json',
+        'OpenAI-Beta': 'chatkit_beta=v1',
+        ...(credentials.organization ? { 'OpenAI-Organization': credentials.organization } : {}),
+        ...(credentials.projectId ? { 'OpenAI-Project': credentials.projectId } : {}),
+      },
+    });
+
+    return response.data ?? {};
   } catch (error) {
     if (isAxiosError(error)) {
-      const responseData = error.response?.data as IDataObject | string | undefined;
-      const errorMessage =
-        (typeof responseData === 'object' && responseData?.error && typeof responseData.error === 'string'
-          ? responseData.error
-          : undefined) ||
-        (typeof responseData === 'object' && responseData?.message && typeof responseData.message === 'string'
-          ? responseData.message
-          : undefined) ||
-        error.message;
+      const status = error.response?.status;
+      const description = typeof error.response?.data === 'string'
+        ? error.response?.data
+        : JSON.stringify(error.response?.data ?? {});
 
-      throw new NodeOperationError(this.getNode(), `ChatKit request failed: ${errorMessage}`, {
-        itemIndex,
-        description:
-          typeof responseData === 'string'
-            ? responseData
-            : responseData
-            ? JSON.stringify(responseData)
-            : undefined,
-      });
+      throw new NodeOperationError(
+        this.getNode(),
+        `ChatKit request failed${status ? ` (HTTP ${status})` : ''}: ${error.message}`,
+        {
+          itemIndex,
+          description,
+        },
+      );
     }
 
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    throw new NodeOperationError(this.getNode(), `ChatKit request failed: ${message}`, {
-      itemIndex,
-    });
+    throw error;
   }
-}
-
-function ensureSessionForMessaging(
-  this: IExecuteFunctions,
-  itemIndex: number,
-  state: PersistedState,
-): PersistedSession {
-  if (!state.session) {
-    throw new NodeOperationError(
-      this.getNode(),
-      'No ChatKit session is stored. Run the Session → Create operation before sending messages.',
-      {
-        itemIndex,
-      },
-    );
-  }
-
-  return state.session;
-}
-
-function determineThreadId(
-  this: IExecuteFunctions,
-  itemIndex: number,
-  strategy: string,
-  state: PersistedState,
-  threadIdParam?: string,
-  prefixParam?: string,
-): { threadId: string; persist: boolean } {
-  if (strategy === 'auto-persist') {
-    if (state.thread?.id) {
-      return { threadId: state.thread.id, persist: false };
-    }
-    return { threadId: `thread_${randomUUID()}`, persist: true };
-  }
-
-  if (strategy === 'provided') {
-    if (!threadIdParam) {
-      throw new NodeOperationError(this.getNode(), 'Thread ID must be provided when using the Provided strategy.', {
-        itemIndex,
-      });
-    }
-
-    return { threadId: threadIdParam, persist: false };
-  }
-
-  const prefix = prefixParam?.trim() || 'thread';
-  return { threadId: `${prefix}_${randomUUID()}`, persist: true };
-}
-
-async function refreshSessionIfNeeded(
-  this: IExecuteFunctions,
-  itemIndex: number,
-  state: PersistedState,
-  timeout?: number,
-): Promise<PersistedSession> {
-  const session = ensureSessionForMessaging.call(this, itemIndex, state);
-
-  if (!session.expiresAt) {
-    return session;
-  }
-
-  const expiresAtMs = new Date(session.expiresAt).getTime();
-  const needsRefresh = expiresAtMs - Date.now() <= SESSION_REFRESH_THRESHOLD_MS;
-
-  if (!needsRefresh) {
-    return session;
-  }
-
-  const refreshed = (await proxyRequest.call(
-    this,
-    itemIndex,
-    'POST',
-    'session/refresh',
-    {
-      sessionId: session.id,
-    },
-    timeout,
-  )) as IDataObject;
-
-  const refreshedSession = refreshed.session as IDataObject | undefined;
-
-  if (!refreshedSession?.id || typeof refreshedSession.client_secret !== 'string') {
-    throw new NodeOperationError(
-      this.getNode(),
-      'The refresh response did not include a session id and client_secret.',
-      { itemIndex },
-    );
-  }
-
-  const updatedSession: PersistedSession = {
-    id: refreshedSession.id as string,
-    clientSecret: refreshedSession.client_secret as string,
-    expiresAt: (refreshedSession.expires_at as string | undefined) ?? session.expiresAt,
-    workflowId: session.workflowId,
-    userId: session.userId,
-  };
-
-  state.session = updatedSession;
-  savePersistedState.call(this, state);
-
-  return updatedSession;
 }
 
 export class ChatKitAgentBuilder implements INodeType {
   description: INodeTypeDescription = {
-    displayName: 'OpenAI ChatKit (Agent Builder)',
+    displayName: 'OpenAI ChatKit',
     name: 'chatKitAgentBuilder',
-    icon: 'file:dynamics-labs.svg',
+    icon: 'file:openai.svg',
     group: ['transform'],
     version: 1,
-    subtitle: '={{$parameter["resource"] + ": " + $parameter["operation"]}}',
-    description: 'Coordinate ChatKit sessions, threads, and messages for Agent Builder workflows.',
+    description: 'Talk to Agent Builder workflows through the ChatKit beta.',
     defaults: {
       name: 'OpenAI ChatKit',
     },
@@ -336,114 +205,79 @@ export class ChatKitAgentBuilder implements INodeType {
             value: 'session',
           },
           {
-            name: 'Thread',
-            value: 'thread',
-          },
-          {
             name: 'Message',
             value: 'message',
           },
         ],
-        default: 'message',
+        default: 'session',
+        noDataExpression: true,
       },
       {
         displayName: 'Operation',
         name: 'operation',
         type: 'options',
-        displayOptions: {
-          show: {
-            resource: ['session'],
-          },
-        },
         options: [
           {
             name: 'Create',
             value: 'create',
             action: 'Create a ChatKit session',
+            description: 'Generate a short-lived client secret for the selected workflow',
+            routing: {
+              request: {
+                method: 'POST',
+              },
+            },
+            displayOptions: {
+              show: {
+                resource: ['session'],
+              },
+            },
           },
           {
             name: 'Refresh',
             value: 'refresh',
-            action: 'Refresh the stored ChatKit session',
+            action: 'Refresh the stored session',
+            displayOptions: {
+              show: {
+                resource: ['session'],
+              },
+            },
           },
           {
             name: 'End (Local)',
-            value: 'endLocal',
-            action: 'End the stored ChatKit session locally',
+            value: 'end',
+            action: 'Clear the stored session',
+            displayOptions: {
+              show: {
+                resource: ['session'],
+              },
+            },
+          },
+          {
+            name: 'Send Message',
+            value: 'send',
+            action: 'Send a message to the workflow',
+            displayOptions: {
+              show: {
+                resource: ['message'],
+              },
+            },
           },
         ],
         default: 'create',
-      },
-      {
-        displayName: 'Operation',
-        name: 'operation',
-        type: 'options',
-        displayOptions: {
-          show: {
-            resource: ['thread'],
-          },
-        },
-        options: [
-          {
-            name: 'Set',
-            value: 'set',
-            action: 'Store a specific thread id for future messages',
-          },
-          {
-            name: 'New',
-            value: 'new',
-            action: 'Generate a new thread id',
-          },
-        ],
-        default: 'set',
-      },
-      {
-        displayName: 'Operation',
-        name: 'operation',
-        type: 'options',
-        displayOptions: {
-          show: {
-            resource: ['message'],
-          },
-        },
-        options: [
-          {
-            name: 'Send',
-            value: 'send',
-            action: 'Send a message to the configured workflow',
-          },
-        ],
-        default: 'send',
-      },
-      {
-        displayName: 'Mode',
-        name: 'mode',
-        type: 'options',
-        options: [
-          {
-            name: 'ChatKit',
-            value: 'chatkit',
-            description: 'Use a proxy that forwards requests to the ChatKit REST endpoints',
-          },
-          {
-            name: 'Agents SDK (Preview)',
-            value: 'agentsSdk',
-            description: 'Reserved for future code-first integrations',
-          },
-        ],
-        default: 'chatkit',
-        description: 'Select how the node connects to your Agent Builder workflow.',
+        noDataExpression: true,
       },
       {
         displayName: 'Workflow ID',
         name: 'workflowId',
         type: 'string',
         default: '',
-        description: 'Identifier of the Agent Builder workflow that should process the conversation.',
+        required: true,
+        description: 'Agent Builder workflow to target.',
         displayOptions: {
           show: {
-            mode: ['chatkit'],
-            resource: ['session', 'message'],
+            resource: ['session'],
+            operation: ['create'],
           },
         },
       },
@@ -452,7 +286,7 @@ export class ChatKitAgentBuilder implements INodeType {
         name: 'userId',
         type: 'string',
         default: '',
-        description: 'Optional identifier tying the session to an end user.',
+        description: 'Optional user identifier to bind to the session.',
         displayOptions: {
           show: {
             resource: ['session'],
@@ -461,18 +295,103 @@ export class ChatKitAgentBuilder implements INodeType {
         },
       },
       {
-        displayName: 'Metadata (JSON)',
+        displayName: 'Session Metadata (JSON)',
         name: 'sessionMetadata',
         type: 'string',
         typeOptions: {
-          rows: 3,
+          rows: 4,
         },
         default: '',
-        description: 'Additional metadata forwarded to your proxy when creating a session.',
+        description: 'Optional metadata object forwarded to the workflow.',
         displayOptions: {
           show: {
             resource: ['session'],
             operation: ['create'],
+          },
+        },
+      },
+      {
+        displayName: 'Session Options (JSON)',
+        name: 'sessionOptions',
+        type: 'string',
+        typeOptions: {
+          rows: 4,
+        },
+        default: '',
+        description: 'Advanced session options, e.g. expiration overrides.',
+        displayOptions: {
+          show: {
+            resource: ['session'],
+            operation: ['create'],
+          },
+        },
+      },
+      {
+        displayName: 'Session Source',
+        name: 'sessionSource',
+        type: 'options',
+        options: [
+          {
+            name: 'Use Stored Session',
+            value: 'stored',
+          },
+          {
+            name: 'Provide Manually',
+            value: 'manual',
+          },
+        ],
+        default: 'stored',
+        description: 'Choose whether to reuse the stored session or supply credentials explicitly.',
+        displayOptions: {
+          show: {
+            resource: ['message'],
+            operation: ['send'],
+          },
+        },
+      },
+      {
+        displayName: 'Session ID',
+        name: 'manualSessionId',
+        type: 'string',
+        default: '',
+        required: true,
+        description: 'Session identifier returned by ChatKit.',
+        displayOptions: {
+          show: {
+            resource: ['message'],
+            operation: ['send'],
+            sessionSource: ['manual'],
+          },
+        },
+      },
+      {
+        displayName: 'Client Secret',
+        name: 'manualClientSecret',
+        type: 'string',
+        typeOptions: {
+          password: true,
+        },
+        default: '',
+        required: true,
+        description: 'Client secret returned when creating or refreshing the session.',
+        displayOptions: {
+          show: {
+            resource: ['message'],
+            operation: ['send'],
+            sessionSource: ['manual'],
+          },
+        },
+      },
+      {
+        displayName: 'Workflow ID',
+        name: 'messageWorkflowId',
+        type: 'string',
+        default: '',
+        description: 'Override the workflow id associated with the stored session.',
+        displayOptions: {
+          show: {
+            resource: ['message'],
+            operation: ['send'],
           },
         },
       },
@@ -481,33 +400,7 @@ export class ChatKitAgentBuilder implements INodeType {
         name: 'threadId',
         type: 'string',
         default: '',
-        description: 'Thread identifier to store for subsequent messages.',
-        displayOptions: {
-          show: {
-            resource: ['thread'],
-            operation: ['set'],
-          },
-        },
-      },
-      {
-        displayName: 'Prefix',
-        name: 'threadPrefix',
-        type: 'string',
-        default: 'thread',
-        description: 'Optional prefix applied when generating a new thread id.',
-        displayOptions: {
-          show: {
-            resource: ['thread'],
-            operation: ['new'],
-          },
-        },
-      },
-      {
-        displayName: 'Auto Refresh Session',
-        name: 'autoRefreshSession',
-        type: 'boolean',
-        default: true,
-        description: 'Refresh the stored session automatically when it is close to expiring.',
+        description: 'Provide a thread id to continue an existing conversation. Leave empty for a new thread.',
         displayOptions: {
           show: {
             resource: ['message'],
@@ -516,27 +409,25 @@ export class ChatKitAgentBuilder implements INodeType {
         },
       },
       {
-        displayName: 'Thread Strategy',
-        name: 'threadStrategy',
+        displayName: 'Role',
+        name: 'messageRole',
         type: 'options',
         options: [
           {
-            name: 'Auto Persist',
-            value: 'auto-persist',
-            description: 'Reuse the stored thread id or generate one automatically on the first message.',
+            name: 'User',
+            value: 'user',
           },
           {
-            name: 'Provided',
-            value: 'provided',
-            description: 'Use the thread id supplied by the workflow input.',
+            name: 'Assistant',
+            value: 'assistant',
           },
           {
-            name: 'New',
-            value: 'new',
-            description: 'Force a brand new thread id and overwrite the stored one.',
+            name: 'System',
+            value: 'system',
           },
         ],
-        default: 'auto-persist',
+        default: 'user',
+        description: 'Role attached to the outgoing message.',
         displayOptions: {
           show: {
             resource: ['message'],
@@ -545,49 +436,21 @@ export class ChatKitAgentBuilder implements INodeType {
         },
       },
       {
-        displayName: 'Thread ID',
-        name: 'messageThreadId',
-        type: 'string',
-        default: '',
-        description: 'Thread id used when the strategy is set to Provided.',
-        displayOptions: {
-          show: {
-            resource: ['message'],
-            operation: ['send'],
-            threadStrategy: ['provided'],
-          },
-        },
-      },
-      {
-        displayName: 'Thread Prefix',
-        name: 'messageThreadPrefix',
-        type: 'string',
-        default: 'thread',
-        description: 'Prefix used when the strategy is set to New.',
-        displayOptions: {
-          show: {
-            resource: ['message'],
-            operation: ['send'],
-            threadStrategy: ['new'],
-          },
-        },
-      },
-      {
-        displayName: 'Input Text',
+        displayName: 'Message Text',
         name: 'inputText',
         type: 'string',
         typeOptions: {
-          rows: 3,
+          rows: 4,
         },
         default: '',
-        description: 'Message text that should be delivered to the workflow.',
+        required: true,
+        description: 'Message content delivered to the workflow.',
         displayOptions: {
           show: {
             resource: ['message'],
             operation: ['send'],
           },
         },
-        required: true,
       },
       {
         displayName: 'System Prompt',
@@ -597,7 +460,7 @@ export class ChatKitAgentBuilder implements INodeType {
           rows: 3,
         },
         default: '',
-        description: 'Optional system level instructions that accompany the message.',
+        description: 'Optional system-level instructions appended to the message.',
         displayOptions: {
           show: {
             resource: ['message'],
@@ -606,43 +469,14 @@ export class ChatKitAgentBuilder implements INodeType {
         },
       },
       {
-        displayName: 'Metadata (JSON)',
+        displayName: 'Message Metadata (JSON)',
         name: 'messageMetadata',
         type: 'string',
         typeOptions: {
-          rows: 3,
+          rows: 4,
         },
         default: '',
-        description: 'Custom key/value metadata forwarded with the message.',
-        displayOptions: {
-          show: {
-            resource: ['message'],
-            operation: ['send'],
-          },
-        },
-      },
-      {
-        displayName: 'Return Mode',
-        name: 'returnMode',
-        type: 'options',
-        options: [
-          {
-            name: 'Final Only',
-            value: 'final_only',
-            description: 'Return only the final assistant message.',
-          },
-          {
-            name: 'Stream Emulated',
-            value: 'stream_emulated',
-            description: 'Return a simulated stream of updates from the workflow.',
-          },
-          {
-            name: 'Both',
-            value: 'both',
-            description: 'Return both streaming-style updates and the final output.',
-          },
-        ],
-        default: 'final_only',
+        description: 'Optional metadata forwarded with the message.',
         displayOptions: {
           show: {
             resource: ['message'],
@@ -658,7 +492,7 @@ export class ChatKitAgentBuilder implements INodeType {
           minValue: 1000,
         },
         default: 30000,
-        description: 'Abort the request if no response is received within this duration.',
+        description: 'Maximum time to wait for the ChatKit API response.',
         displayOptions: {
           show: {
             resource: ['message'],
@@ -672,311 +506,214 @@ export class ChatKitAgentBuilder implements INodeType {
   async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
     const items = this.getInputData();
     const returnData: INodeExecutionData[] = [];
+    const state = getState.call(this);
 
     for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
-      try {
-        const resource = this.getNodeParameter('resource', itemIndex) as string;
-        const operation = this.getNodeParameter('operation', itemIndex) as string;
-        const mode = this.getNodeParameter('mode', itemIndex) as string;
+      const resource = this.getNodeParameter('resource', itemIndex) as string;
+      const operation = this.getNodeParameter('operation', itemIndex) as string;
 
-        if (mode !== 'chatkit') {
-          throw new NodeOperationError(
-            this.getNode(),
-            'Only ChatKit mode is currently supported. Agents SDK mode will be available in a future update.',
-            { itemIndex },
-          );
-        }
+      if (resource === 'session') {
+        if (operation === 'create') {
+          const workflowId = (this.getNodeParameter('workflowId', itemIndex) as string).trim();
 
-        const state = ensurePersistedState.call(this) as PersistedState;
-
-        if (resource === 'session') {
-          if (operation === 'create') {
-            const workflowId = (this.getNodeParameter('workflowId', itemIndex) as string).trim();
-
-            if (!workflowId) {
-              throw new NodeOperationError(this.getNode(), 'Workflow ID is required to create a session.', {
-                itemIndex,
-              });
-            }
-
-            const userId = (this.getNodeParameter('userId', itemIndex, '') as string).trim();
-            const metadata = parseJsonObjectParameter.call(this, 'sessionMetadata', itemIndex);
-
-            const payload: IDataObject = {
-              workflowId,
-              ...(userId ? { userId } : {}),
-              ...(metadata ? { metadata } : {}),
-            };
-
-            const response = await proxyRequest.call(
-              this,
-              itemIndex,
-              'POST',
-              'session',
-              payload,
-            );
-
-            const session = response.session as IDataObject | undefined;
-
-            if (!session?.id || typeof session.client_secret !== 'string') {
-              throw new NodeOperationError(
-                this.getNode(),
-                'Session creation failed: response did not include id and client_secret.',
-                { itemIndex },
-              );
-            }
-
-            const expiresAt = (session.expires_at as string | undefined) ?? undefined;
-
-            const persistedSession: PersistedSession = {
-              id: session.id as string,
-              clientSecret: session.client_secret as string,
-              expiresAt,
-              workflowId,
-              userId: userId || undefined,
-            };
-
-            state.session = persistedSession;
-            savePersistedState.call(this, state);
-
-            const output: IDataObject = {
-              workflowId,
-              userId: userId || undefined,
-              session: {
-                id: session.id,
-                client_secret: maskClientSecret(session.client_secret),
-                expires_at: expiresAt,
-              },
-              raw: sanitizePayload(response),
-            };
-
-            returnData.push({ json: output });
-            continue;
-          }
-
-          if (operation === 'refresh') {
-            const session = ensureSessionForMessaging.call(this, itemIndex, state);
-
-            const response = await proxyRequest.call(
-              this,
-              itemIndex,
-              'POST',
-              'session/refresh',
-              {
-                sessionId: session.id,
-              },
-            );
-
-            const refreshedSession = response.session as IDataObject | undefined;
-
-            if (!refreshedSession?.id || typeof refreshedSession.client_secret !== 'string') {
-              throw new NodeOperationError(
-                this.getNode(),
-                'Session refresh failed: response did not include id and client_secret.',
-                { itemIndex },
-              );
-            }
-
-            const updatedSession: PersistedSession = {
-              id: refreshedSession.id as string,
-              clientSecret: refreshedSession.client_secret as string,
-              expiresAt: (refreshedSession.expires_at as string | undefined) ?? session.expiresAt,
-              workflowId: session.workflowId,
-              userId: session.userId,
-            };
-
-            state.session = updatedSession;
-            savePersistedState.call(this, state);
-
-            const output: IDataObject = {
-              workflowId: session.workflowId,
-              userId: session.userId,
-              session: {
-                id: refreshedSession.id,
-                client_secret: maskClientSecret(refreshedSession.client_secret),
-                expires_at: updatedSession.expiresAt,
-              },
-              raw: sanitizePayload(response),
-            };
-
-            returnData.push({ json: output });
-            continue;
-          }
-
-          if (operation === 'endLocal') {
-            delete state.session;
-            delete state.thread;
-            savePersistedState.call(this, state);
-
-            returnData.push({
-              json: {
-                ended: true,
-                message: 'Cleared the stored ChatKit session and thread information.',
-              },
-            });
-            continue;
-          }
-
-          throw new NodeOperationError(this.getNode(), `Unsupported session operation: ${operation}`, {
-            itemIndex,
-          });
-        }
-
-        if (resource === 'thread') {
-          if (operation === 'set') {
-            const threadId = (this.getNodeParameter('threadId', itemIndex) as string).trim();
-
-            if (!threadId) {
-              throw new NodeOperationError(this.getNode(), 'Thread ID is required.', { itemIndex });
-            }
-
-            state.thread = { id: threadId };
-            savePersistedState.call(this, state);
-
-            returnData.push({ json: { thread: { id: threadId } } });
-            continue;
-          }
-
-          if (operation === 'new') {
-            const prefix = (this.getNodeParameter('threadPrefix', itemIndex) as string).trim() || 'thread';
-            const threadId = `${prefix}_${randomUUID()}`;
-
-            state.thread = { id: threadId };
-            savePersistedState.call(this, state);
-
-            returnData.push({ json: { thread: { id: threadId } } });
-            continue;
-          }
-
-          throw new NodeOperationError(this.getNode(), `Unsupported thread operation: ${operation}`, {
-            itemIndex,
-          });
-        }
-
-        if (resource === 'message') {
-          if (operation !== 'send') {
-            throw new NodeOperationError(this.getNode(), `Unsupported message operation: ${operation}`, {
+          if (!workflowId) {
+            throw new NodeOperationError(this.getNode(), 'Workflow ID is required to create a session.', {
               itemIndex,
             });
           }
 
-          const workflowId = (this.getNodeParameter('workflowId', itemIndex, '') as string).trim();
+          const userId = (this.getNodeParameter('userId', itemIndex, '') as string).trim();
+          const metadata = parseJsonParameter.call(this, 'sessionMetadata', itemIndex);
+          const options = parseJsonParameter.call(this, 'sessionOptions', itemIndex);
 
-          const session = ensureSessionForMessaging.call(this, itemIndex, state);
+          const body: IDataObject = {
+            workflow_id: workflowId,
+            ...(userId ? { user_id: userId } : {}),
+            ...(metadata ? { metadata } : {}),
+            ...(options ? { session_options: options } : {}),
+          };
 
-          if (workflowId && session.workflowId && session.workflowId !== workflowId) {
-            session.workflowId = workflowId;
-          }
+          const response = await chatKitRequest.call(this, itemIndex, 'POST', '/v1/chat/sessions', body);
+          const sessionPayload = (response.session as IDataObject | undefined) ?? response;
 
-          const resolvedWorkflowId = session.workflowId || workflowId;
+          const sessionId = sessionPayload.id as string | undefined;
+          const clientSecret = (sessionPayload.client_secret ?? sessionPayload.clientSecret) as string | undefined;
 
-          if (!resolvedWorkflowId) {
+          if (!sessionId || !clientSecret) {
             throw new NodeOperationError(
               this.getNode(),
-              'Workflow ID is required to send a message. Provide it on the node or recreate the session.',
+              'Session creation response did not include id and client_secret.',
               { itemIndex },
             );
           }
 
-          const autoRefresh = this.getNodeParameter('autoRefreshSession', itemIndex, true) as boolean;
-          const timeout = this.getNodeParameter('timeoutMs', itemIndex, 30000) as number;
+          const stored: StoredSession = {
+            id: sessionId,
+            clientSecret,
+            expiresAt: (sessionPayload.expires_at as string | undefined) ?? undefined,
+            workflowId,
+          };
 
-          let activeSession = session;
+          state.session = stored;
+          saveState.call(this, state);
 
-          if (autoRefresh) {
-            activeSession = await refreshSessionIfNeeded.call(this, itemIndex, state, timeout);
-          }
+          const output: IDataObject = {
+            workflowId,
+            session: {
+              id: sessionId,
+              client_secret: maskSecret(clientSecret),
+              expires_at: stored.expiresAt,
+            },
+            raw: sanitizeResponse(response),
+          };
 
-          const strategy = this.getNodeParameter('threadStrategy', itemIndex, 'auto-persist') as string;
-          const providedThreadId = (this.getNodeParameter('messageThreadId', itemIndex, '') as string).trim();
-          const threadPrefix = (this.getNodeParameter('messageThreadPrefix', itemIndex, '') as string).trim();
+          returnData.push({ json: output });
+          continue;
+        }
 
-          const { threadId, persist } = determineThreadId.call(
-            this,
-            itemIndex,
-            strategy,
-            state,
-            providedThreadId,
-            threadPrefix,
-          );
+        if (operation === 'refresh') {
+          const session = ensureSession.call(this, itemIndex, state);
+          const endpoint = `/v1/chat/sessions/${encodeURIComponent(session.id)}/refresh`;
+          const body: IDataObject = {
+            client_secret: session.clientSecret,
+          };
 
-          if (persist) {
-            state.thread = { id: threadId };
-            savePersistedState.call(this, state);
-          }
+          const response = await chatKitRequest.call(this, itemIndex, 'POST', endpoint, body);
+          const sessionPayload = (response.session as IDataObject | undefined) ?? response;
+          const clientSecret = (sessionPayload.client_secret ?? sessionPayload.clientSecret) as string | undefined;
 
-          const inputText = (this.getNodeParameter('inputText', itemIndex) as string).trim();
-
-          if (!inputText) {
-            throw new NodeOperationError(this.getNode(), 'Input Text is required to send a message.', {
+          if (!clientSecret) {
+            throw new NodeOperationError(this.getNode(), 'Refresh response did not include a client_secret.', {
               itemIndex,
             });
           }
 
-          const systemPrompt = (this.getNodeParameter('systemPrompt', itemIndex, '') as string).trim();
-          const metadata = parseJsonObjectParameter.call(this, 'messageMetadata', itemIndex);
-          const returnMode = this.getNodeParameter('returnMode', itemIndex, 'final_only') as string;
+          state.session = {
+            id: session.id,
+            clientSecret,
+            expiresAt: (sessionPayload.expires_at as string | undefined) ?? session.expiresAt,
+            workflowId: session.workflowId,
+          };
+          saveState.call(this, state);
 
-          const payload: IDataObject = {
-            workflowId: resolvedWorkflowId,
-            sessionId: activeSession.id,
-            clientSecret: activeSession.clientSecret,
-            threadId,
-            message: {
-              role: 'user',
-              input_text: inputText,
-              ...(systemPrompt ? { system_prompt: systemPrompt } : {}),
-              ...(metadata ? { metadata } : {}),
+          const output: IDataObject = {
+            workflowId: session.workflowId,
+            session: {
+              id: session.id,
+              client_secret: maskSecret(clientSecret),
+              expires_at: state.session.expiresAt,
             },
-            returnMode,
-            ...(activeSession.userId ? { userId: activeSession.userId } : {}),
+            raw: sanitizeResponse(response),
           };
 
-          const response = await proxyRequest.call(
-            this,
-            itemIndex,
-            'POST',
-            'message/send',
-            payload,
-            timeout,
-          );
-
-          const sanitized = sanitizePayload(response);
-
-          if (sanitized.session && typeof (sanitized.session as IDataObject).client_secret === 'string') {
-            const sessionPayload = response.session as IDataObject;
-            state.session = {
-              id: sessionPayload.id as string,
-              clientSecret: (response.session as IDataObject).client_secret as string,
-              expiresAt: (sessionPayload.expires_at as string | undefined) ?? activeSession.expiresAt,
-              workflowId: resolvedWorkflowId,
-              userId: activeSession.userId,
-            };
-            savePersistedState.call(this, state);
-          }
-
-          if (!persist) {
-            const threadResponse = response.thread as IDataObject | undefined;
-            if (threadResponse?.id) {
-              state.thread = { id: threadResponse.id as string };
-              savePersistedState.call(this, state);
-            }
-          }
-
-          returnData.push({ json: sanitized });
+          returnData.push({ json: output });
           continue;
         }
 
-        throw new NodeOperationError(this.getNode(), `Unsupported resource: ${resource}`, {
-          itemIndex,
-        });
-      } catch (error) {
-        if (error instanceof NodeOperationError) {
-          throw error;
+        if (operation === 'end') {
+          delete state.session;
+          saveState.call(this, state);
+          returnData.push({ json: { message: 'Cleared stored ChatKit session.' } });
+          continue;
         }
 
-        throw new NodeOperationError(this.getNode(), error as Error, { itemIndex });
+        throw new NodeOperationError(this.getNode(), `Unsupported session operation: ${operation}`, { itemIndex });
       }
+
+      if (resource === 'message') {
+        if (operation !== 'send') {
+          throw new NodeOperationError(this.getNode(), `Unsupported message operation: ${operation}`, { itemIndex });
+        }
+
+        const source = this.getNodeParameter('sessionSource', itemIndex, 'stored') as string;
+        let sessionId: string;
+        let clientSecret: string;
+        let workflowId = (this.getNodeParameter('messageWorkflowId', itemIndex, '') as string).trim();
+
+        if (source === 'stored') {
+          const stored = ensureSession.call(this, itemIndex, state);
+          sessionId = stored.id;
+          clientSecret = stored.clientSecret;
+          if (!workflowId) {
+            workflowId = stored.workflowId ?? '';
+          }
+        } else {
+          sessionId = (this.getNodeParameter('manualSessionId', itemIndex) as string).trim();
+          clientSecret = (this.getNodeParameter('manualClientSecret', itemIndex) as string).trim();
+
+          if (!sessionId || !clientSecret) {
+            throw new NodeOperationError(
+              this.getNode(),
+              'Session ID and Client Secret are required when providing manual credentials.',
+              { itemIndex },
+            );
+          }
+        }
+
+        if (!workflowId) {
+          throw new NodeOperationError(
+            this.getNode(),
+            'Workflow ID is required to send a message. Provide it on the node or create a new session.',
+            { itemIndex },
+          );
+        }
+
+        const inputText = (this.getNodeParameter('inputText', itemIndex) as string).trim();
+
+        if (!inputText) {
+          throw new NodeOperationError(this.getNode(), 'Message Text is required.', { itemIndex });
+        }
+
+        const role = this.getNodeParameter('messageRole', itemIndex, 'user') as string;
+        const systemPrompt = (this.getNodeParameter('systemPrompt', itemIndex, '') as string).trim();
+        const threadId = (this.getNodeParameter('threadId', itemIndex, '') as string).trim();
+        const metadata = parseJsonParameter.call(this, 'messageMetadata', itemIndex);
+        const timeout = this.getNodeParameter('timeoutMs', itemIndex, 30000) as number;
+
+        const messageContent: IDataObject[] = [
+          {
+            type: 'input_text',
+            text: inputText,
+          },
+        ];
+
+        const payload: IDataObject = {
+          client_secret: clientSecret,
+          workflow_id: workflowId,
+          messages: [
+            {
+              role,
+              content: messageContent,
+            },
+          ],
+          ...(threadId ? { thread_id: threadId } : {}),
+          ...(systemPrompt ? { system_prompt: systemPrompt } : {}),
+          ...(metadata ? { metadata } : {}),
+        };
+
+        const endpoint = `/v1/chat/sessions/${encodeURIComponent(sessionId)}/messages`;
+        const response = await chatKitRequest.call(this, itemIndex, 'POST', endpoint, payload, timeout);
+        const sanitized = sanitizeResponse(response);
+
+        if (source === 'stored') {
+          const sessionPayload = (response.session as IDataObject | undefined) ?? undefined;
+
+          if (sessionPayload?.client_secret) {
+            state.session = {
+              id: sessionId,
+              clientSecret: sessionPayload.client_secret as string,
+              expiresAt: (sessionPayload.expires_at as string | undefined) ?? state.session?.expiresAt,
+              workflowId,
+            };
+            saveState.call(this, state);
+          }
+        }
+
+        returnData.push({ json: sanitized });
+        continue;
+      }
+
+      throw new NodeOperationError(this.getNode(), `Unsupported resource: ${resource}`, { itemIndex });
     }
 
     return [returnData];

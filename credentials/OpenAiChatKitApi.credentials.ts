@@ -1,44 +1,44 @@
-
 import type { ICredentialType, INodeProperties } from 'n8n-workflow';
 
 export class OpenAiChatKitApi implements ICredentialType {
   name = 'openAiChatKitApi';
-  displayName = 'OpenAI ChatKit Proxy API';
+
+  displayName = 'OpenAI ChatKit API';
+
   documentationUrl = 'https://platform.openai.com/docs/guides/chatkit';
+
   properties: INodeProperties[] = [
-    {
-      displayName: 'Server Proxy Base URL',
-      name: 'serverProxyBaseUrl',
-      type: 'string',
-      default: '',
-      required: true,
-      placeholder: 'https://api.example.com/chatkit',
-      description:
-        'HTTPS endpoint of your backend proxy that orchestrates ChatKit requests on behalf of n8n.',
-    },
     {
       displayName: 'API Key',
       name: 'apiKey',
       type: 'string',
-      default: '',
       typeOptions: {
         password: true,
       },
-      description: 'Optional token forwarded as a Bearer Authorization header to your proxy.',
+      default: '',
+      required: true,
+      description: 'OpenAI API key with access to ChatKit (Agent Builder) beta.',
     },
     {
-      displayName: 'Project ID',
-      name: 'projectId',
+      displayName: 'Base URL',
+      name: 'baseUrl',
       type: 'string',
-      default: '',
-      description: 'Optional project identifier forwarded using the X-Project-Id header.',
+      default: 'https://api.openai.com',
+      description: 'Override only when using a compatible proxy. Must include the protocol, e.g. https://api.openai.com.',
     },
     {
       displayName: 'Organization',
       name: 'organization',
       type: 'string',
       default: '',
-      description: 'Optional organization identifier forwarded using the X-Organization-Id header.',
+      description: 'Optional OpenAI organization header forwarded as OpenAI-Organization.',
+    },
+    {
+      displayName: 'Project',
+      name: 'projectId',
+      type: 'string',
+      default: '',
+      description: 'Optional OpenAI project header forwarded as OpenAI-Project.',
     },
   ];
 }
