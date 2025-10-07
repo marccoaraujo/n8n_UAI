@@ -1,0 +1,39 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title">
+  <title>Dynamics Labs</title>
+  <defs>
+    <linearGradient id="gradient" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#5b2cff"/>
+      <stop offset="50%" stop-color="#6952ff"/>
+      <stop offset="100%" stop-color="#26c7ff"/>
+    </linearGradient>
+    <clipPath id="circleClip">
+      <circle cx="256" cy="256" r="240"/>
+    </clipPath>
+    <linearGradient id="dotGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#dcecff" stop-opacity="0.65"/>
+    </linearGradient>
+  </defs>
+  <circle cx="256" cy="256" r="248" fill="url(#gradient)"/>
+  <g clip-path="url(#circleClip)">
+    <g transform="translate(256 150)">
+      <path d="M0 -96c-48 64-96 144-96 200 0 58 43 88 96 88s96-30 96-88c0-56-48-136-96-200z" fill="rgba(255,255,255,0.18)"/>
+      <path d="M0 -92c-43 58-86 134-86 184 0 50 39 76 86 76s86-26 86-76c0-50-43-126-86-184z" fill="none" stroke="#ffffff" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.75"/>
+      <path d="M0 -32c-28 36-56 84-56 116 0 32 21 48 56 48s56-16 56-48c0-32-28-80-56-116z" fill="#ffffff" fill-opacity="0.2"/>
+      <circle cx="0" cy="-124" r="12" fill="url(#dotGradient)"/>
+      <circle cx="-28" cy="-144" r="8" fill="url(#dotGradient)"/>
+      <circle cx="28" cy="-144" r="8" fill="url(#dotGradient)"/>
+      <circle cx="-52" cy="-116" r="10" fill="url(#dotGradient)"/>
+      <circle cx="52" cy="-116" r="10" fill="url(#dotGradient)"/>
+      <circle cx="-70" cy="-80" r="7" fill="url(#dotGradient)"/>
+      <circle cx="70" cy="-80" r="7" fill="url(#dotGradient)"/>
+      <circle cx="0" cy="-160" r="6" fill="url(#dotGradient)"/>
+    </g>
+  </g>
+  <text x="256" y="328" text-anchor="middle" font-family="'Montserrat', 'Poppins', 'Segoe UI', sans-serif" font-size="88" fill="#ffffff" font-weight="600" letter-spacing="1">
+    Dynamics
+  </text>
+  <text x="256" y="404" text-anchor="middle" font-family="'Montserrat', 'Poppins', 'Segoe UI', sans-serif" font-size="72" fill="#ffffff" font-weight="600" letter-spacing="6">
+    LABS
+  </text>
+</svg>
