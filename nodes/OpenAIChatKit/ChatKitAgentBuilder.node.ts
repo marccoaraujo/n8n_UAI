@@ -134,9 +134,47 @@ async function chatKitRequest(
     });
   }
 
-  const baseUrl = (credentials.baseUrl || 'https://api.openai.com').replace(/\/+$/u, '');
-  const path = endpoint.replace(/^\/+/, '');
-  const url = `${baseUrl}/${path}`;
+  const baseUrlString = credentials.baseUrl?.trim() || 'https://api.openai.com';
+  let url: string;
+
+  try {
+    const baseUrl = new URL(baseUrlString);
+    const baseSegments = baseUrl.pathname
+      .split('/')
+      .map((segment) => segment.trim())
+      .filter((segment) => segment.length > 0);
+    const endpointSegments = endpoint
+      .split('/')
+      .map((segment) => segment.trim())
+      .filter((segment) => segment.length > 0);
+
+    let overlap = 0;
+
+    for (
+      let candidate = Math.min(baseSegments.length, endpointSegments.length);
+      candidate > 0;
+      candidate -= 1
+    ) {
+      const baseSuffix = baseSegments.slice(baseSegments.length - candidate);
+      const endpointPrefix = endpointSegments.slice(0, candidate);
+
+      const matches = baseSuffix.every((segment, index) => segment === endpointPrefix[index]);
+
+      if (matches) {
+        overlap = candidate;
+        break;
+      }
+    }
+
+    const combinedPathSegments = [...baseSegments, ...endpointSegments.slice(overlap)];
+    baseUrl.pathname = combinedPathSegments.length > 0 ? `/${combinedPathSegments.join('/')}` : '/';
+    url = baseUrl.toString();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Invalid base URL';
+    throw new NodeOperationError(this.getNode(), `Failed to resolve ChatKit URL: ${message}`, {
+      itemIndex,
+    });
+  }
 
   try {
     const response = await axios.request<IDataObject>({
