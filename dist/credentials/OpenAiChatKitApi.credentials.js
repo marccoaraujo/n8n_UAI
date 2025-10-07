@@ -4,26 +4,41 @@ exports.OpenAiChatKitApi = void 0;
 class OpenAiChatKitApi {
     constructor() {
         this.name = 'openAiChatKitApi';
-        this.displayName = 'OpenAI ChatKit API';
-        this.documentationUrl = 'https://platform.openai.com/docs/api-reference/chatkit/sessions';
+        this.displayName = 'OpenAI ChatKit Proxy API';
+        this.documentationUrl = 'https://platform.openai.com/docs/guides/chatkit';
         this.properties = [
+            {
+                displayName: 'Server Proxy Base URL',
+                name: 'serverProxyBaseUrl',
+                type: 'string',
+                default: '',
+                required: true,
+                placeholder: 'https://api.example.com/chatkit',
+                description: 'HTTPS endpoint of your backend proxy that orchestrates ChatKit requests on behalf of n8n.',
+            },
             {
                 displayName: 'API Key',
                 name: 'apiKey',
                 type: 'string',
                 default: '',
-                required: true,
-                description: 'Your OpenAI API key with access to the Agent Builder / ChatKit beta.',
                 typeOptions: {
                     password: true,
                 },
+                description: 'Optional token forwarded as a Bearer Authorization header to your proxy.',
             },
             {
-                displayName: 'Base URL',
-                name: 'baseUrl',
+                displayName: 'Project ID',
+                name: 'projectId',
                 type: 'string',
-                default: 'https://api.openai.com/v1',
-                description: 'Override the default OpenAI API base URL if you are using a proxy.',
+                default: '',
+                description: 'Optional project identifier forwarded using the X-Project-Id header.',
+            },
+            {
+                displayName: 'Organization',
+                name: 'organization',
+                type: 'string',
+                default: '',
+                description: 'Optional organization identifier forwarded using the X-Organization-Id header.',
             },
         ];
     }

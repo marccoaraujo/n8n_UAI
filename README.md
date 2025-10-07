@@ -4,74 +4,96 @@ Este repositório reúne os recursos utilizados para criar e publicar nodes cust
 
 ## OpenAI ChatKit Custom Node
 
-Este pacote disponibiliza um node que facilita a integração com o ChatKit do Agent Builder da OpenAI. O node reproduz o fluxo descrito na documentação oficial — criar uma sessão autorizada para um workflow e encerrá-la quando não for mais necessária. Toda a comunicação segue os requisitos do beta `chatkit_beta=v1` documentados em [ChatKit](https://platform.openai.com/docs/guides/chatkit).
+O pacote `n8n-nodes-openai-chatkit` expõe um nó voltado ao fluxo recomendado para conversar com workflows criados no Agent Builder usando o ChatKit. O objetivo é separar explicitamente o gerenciamento da sessão, a continuidade da conversa (thread) e o envio de mensagens para reduzir erros de expiração ou roteamento.
 
-### Funcionalidades
+### Principais capacidades
 
-- Criar uma nova sessão do ChatKit vinculada a um workflow do Agent Builder, informando o identificador do usuário final e customizações opcionais de workflow, limite de requisições e recursos do widget.
-- Consultar detalhes de uma sessão existente a partir do identificador retornado pela API.
-- Listar sessões com filtros por workflow, usuário ou cursores de paginação para auditoria ou reuso de sessões.
-- Cancelar sessões ativas para encerrar o acesso do widget ao workflow quando o chat não for mais necessário.
+- **Sessão**: criar, renovar automaticamente (quando próximo da expiração) e encerrar localmente as credenciais curtas (`client_secret`) utilizadas pelo widget.
+- **Thread**: definir um identificador específico ou gerar novos threads sob demanda, permitindo controlar quando uma conversa deve continuar ou recomeçar.
+- **Mensagem**: enviar o texto do usuário para o workflow selecionado, opcionalmente com prompt de sistema, metadados customizados e modo de retorno configurável.
+
+Toda a comunicação é feita via um **backend proxy** controlado por você. Esse proxy protege a chave da OpenAI, aplica regras de segurança e traduz as chamadas para os endpoints oficiais descritos em [ChatKit](https://platform.openai.com/docs/guides/chatkit).
 
 ### Estrutura do projeto
 
-- `credentials/OpenAiChatKitApi.credentials.ts`: credenciais utilizadas para armazenar a chave de API e demais parâmetros necessários.
-- `nodes/OpenAIChatKit/ChatKitAgentBuilder.node.ts`: implementação principal do node (gera requests `POST /chatkit/sessions`, `GET /chatkit/sessions/{id}`, `GET /chatkit/sessions` e `POST /chatkit/sessions/{id}/cancel`).
-- `nodes/OpenAIChatKit/openai.svg`: ícone exibido pelo node no editor do n8n.
+- `credentials/OpenAiChatKitApi.credentials.ts`: definição das credenciais utilizadas pelo n8n para acessar seu proxy.
+- `nodes/OpenAIChatKit/ChatKitAgentBuilder.node.ts`: implementação do nó com os recursos de sessão, thread e mensagem.
+- `nodes/OpenAIChatKit/dynamics-labs.svg`: logotipo exibido no editor do n8n.
+- `dist/`: saída compilada pronta para publicação/instalação.
 
-### Como utilizar
+### Instalação
 
-1. Instale o pacote no diretório raiz do seu n8n utilizando o prefixo oficial `n8n-nodes-*` para publicação no npm:
+1. Instale o pacote no ambiente do n8n:
 
    ```bash
    npm install n8n-nodes-openai-chatkit
    ```
 
-   Caso esteja desenvolvendo localmente, instale as dependências e gere a build do node:
+   Durante o desenvolvimento local, utilize:
 
    ```bash
    npm install
    npm run build
    ```
 
-2. Copie a pasta `dist` gerada (ou disponível em `node_modules/n8n-nodes-openai-chatkit`) para o diretório de nodes customizados do n8n (por padrão `~/.n8n/custom/`).
-3. Reinicie o n8n. O node "OpenAI ChatKit" estará disponível na categoria **Transform**.
-4. Crie novas credenciais do tipo **OpenAI ChatKit API** informando:
-   - **API Key**: uma chave da OpenAI com acesso ao beta do Agent Builder / ChatKit.
-   - **Base URL**: opcional, use apenas se estiver utilizando um proxy. O node injeta automaticamente o cabeçalho `OpenAI-Beta: chatkit_beta=v1` exigido pela API. Informe a URL completa com protocolo (ex.: `https://api.openai.com/v1` ou `https://api.openai.com/v1/chatkit`). O node normaliza o caminho para evitar segmentos duplicados ao chamar os endpoints de sessão.
+2. Copie a pasta `dist` gerada para o diretório de nodes customizados do n8n (por padrão `~/.n8n/custom/`).
+3. Reinicie o n8n. O nó "OpenAI ChatKit" aparecerá na categoria **Transform**.
 
-### Configuração do node
+### Configuração das credenciais
 
-Ao usar a operação **Create Session** informe obrigatoriamente:
+Crie credenciais do tipo **OpenAI ChatKit Proxy API** com as seguintes propriedades:
 
-- **Workflow ID**: o identificador `wf_*` gerado pelo Agent Builder.
-- **User ID**: um identificador livre que representa o usuário final (por exemplo um ID de dispositivo, conta ou e-mail). Esse valor é usado pelo ChatKit para compartilhar recursos dentro do mesmo escopo.
+- **Server Proxy Base URL (obrigatório)**: URL (com protocolo) do seu backend proxy, por exemplo `https://api.seudominio.com/chatkit`.
+- **API Key (opcional)**: token encaminhado como `Authorization: Bearer <token>` para o proxy.
+- **Project ID / Organization (opcionais)**: encaminhados nos cabeçalhos `X-Project-Id` e `X-Organization-Id`, úteis caso o proxy utilize esses valores para roteamento.
 
-Opcionalmente, você pode ajustar:
+A chave real da OpenAI deve permanecer no backend proxy; o n8n nunca envia o segredo diretamente para a OpenAI.
 
-- **Workflow Settings**: defina uma versão específica, envie variáveis de estado em JSON e altere o comportamento de tracing.
-- **ChatKit Configuration**: habilite/desabilite histórico, títulos automáticos e uploads, além de limites para arquivos e quantidade de threads visíveis.
-- **Session Options**: personalize o tempo de expiração (em segundos) e o limite de requisições por minuto aceito pela sessão.
+### Recursos e operações
 
-A operação **Get Session** permite recuperar os metadados mais recentes de um identificador informado pelo ChatKit utilizando o endpoint `GET /chatkit/sessions/{session_id}`.
+O nó expõe três recursos principais:
 
-Já a operação **List Sessions** aceita filtros opcionais em **List Filters**:
+#### 1. Session
 
-- **Workflow ID**: restringe os resultados a um workflow específico (`workflow_id`).
-- **User ID**: retorna somente sessões ligadas a um usuário final (`user`).
-- **Before/After Cursor**: utiliza os cursores da API para navegar entre páginas de resultados.
-- **Limit**: controla quantos registros são retornados em uma única chamada (padrão do ChatKit quando omitido).
+- **Create**: recebe `workflowId` (obrigatório), `userId` (opcional) e `metadata` em JSON. Grava `session.id`, `client_secret` e `expires_at` no armazenamento estático do nó para reutilização futura.
+- **Refresh**: usa a sessão armazenada para solicitar um novo `client_secret`. Ideal para cenários onde o segredo esteja próximo da expiração.
+- **End (Local)**: remove do armazenamento interno os dados de sessão e thread, forçando a criação de novas credenciais em execuções seguintes.
 
-Por fim, a operação **Cancel Session** requer apenas o **Session ID** retornado pela criação da sessão e encerra o chat conforme o endpoint oficial `POST /chatkit/sessions/{session_id}/cancel`.
+#### 2. Thread
+
+- **Set**: persiste um `threadId` fornecido manualmente, útil quando você deseja continuar uma conversa existente.
+- **New**: gera automaticamente um novo `thread_<uuid>` (ou com o prefixo informado) e o salva para as próximas mensagens.
+
+#### 3. Message
+
+- **Send**: envia a mensagem do usuário para o workflow. A operação:
+  - Garante que exista uma sessão válida (executando `Refresh` automaticamente caso a expiração esteja a menos de 60 segundos, se a opção "Auto Refresh Session" estiver habilitada).
+  - Resolve o `threadId` seguindo a estratégia escolhida (`auto-persist`, `provided`, `new`).
+  - Encaminha `inputText`, `systemPrompt` opcional, `metadata` em JSON e o `returnMode` desejado (`final_only`, `stream_emulated`, `both`).
+  - Retorna a resposta sanitizada do proxy, incluindo sessão mascarada, thread utilizado e o payload bruto para depuração.
+
+### Fluxos sugeridos
+
+1. **Primeiro contato**
+   - `Session → Create`
+   - `Thread → New`
+   - `Message → Send` com `threadStrategy = auto-persist`
+
+2. **Mensagens subsequentes na mesma conversa**
+   - Apenas `Message → Send` (o nó reaproveita sessão/thread do armazenamento).
+
+3. **Forçar nova conversa**
+   - `Thread → New` (ou `Message → Send` com `threadStrategy = new`)
 
 ### Tratamento de erros
 
-Quando o node é utilizado em fluxos com a opção "Continue On Fail" ativa, eventuais erros de chamada à API serão expostos no campo `error` do item retornado para facilitar o diagnóstico. Respostas de erro retornadas pela OpenAI são repassadas diretamente para ajudar a identificar parâmetros inválidos descritos na [referência da API de sessões](https://platform.openai.com/docs/api-reference/chatkit/sessions/create).
+- Falhas retornadas pelo proxy ou pela OpenAI são propagadas com a mensagem original e o payload bruto em `raw` quando disponíveis.
+- Quando "Continue On Fail" estiver ativo em um fluxo do n8n, utilize o campo `error` dos itens para identificar rapidamente respostas HTTP 4xx/5xx.
 
 ### Publicação
 
-O fluxo de publicação está automatizado via GitHub Actions (`.github/workflows/release.yml`). Ao criar uma tag no formato `v*.*.*`, o projeto é compilado com `tsc` e publicado no npm usando provenance.
+O workflow `.github/workflows/release.yml` publica automaticamente o pacote no npm sempre que uma tag `v*.*.*` é criada. O processo roda `npm ci`, `npm run build` e `npm publish --provenance`.
 
 ### Licença
 
-Distribuído sob a licença MIT. Consulte o arquivo `LICENSE` caso seja adicionado futuramente.
+Distribuído sob a licença MIT. Caso o arquivo `LICENSE` seja adicionado futuramente, consulte-o para os detalhes completos.
