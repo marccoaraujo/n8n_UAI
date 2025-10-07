@@ -107,8 +107,79 @@ async function chatKitRequest(itemIndex, method, endpoint, body, timeout) {
             itemIndex,
         });
     }
-    const baseUrlString = credentials.baseUrl?.trim() || 'https://api.openai.com';
+    const baseUrlValue = credentials.baseUrl?.trim() || 'https://api.openai.com';
+    let baseUrl;
+    try {
+        baseUrl = new URL(baseUrlValue);
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : 'Invalid base URL';
+        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to resolve ChatKit URL: ${message}`, {
+            itemIndex,
+        });
+    }
+    if (!baseUrl.pathname.endsWith('/')) {
+        baseUrl.pathname = `${baseUrl.pathname.replace(/\/+$/, '')}/`;
+    }
+    const basePath = baseUrl.pathname.replace(/^\/+|\/+$/g, '');
+    const basePathPrefix = basePath.toLowerCase();
     let url;
+    try {
+        if (endpoint instanceof URL) {
+            url = endpoint.toString();
+        }
+        else {
+            let endpointValue;
+            if (Array.isArray(endpoint)) {
+                endpointValue = endpoint.join('/');
+            }
+            else {
+                endpointValue = endpoint;
+            }
+            const trimmedEndpoint = endpointValue.trim();
+            if (!trimmedEndpoint) {
+                throw new Error('Endpoint path is empty');
+            }
+            if (/^https?:\/\//i.test(trimmedEndpoint)) {
+                url = trimmedEndpoint;
+            }
+            else {
+                const endpointUrl = new URL(trimmedEndpoint, 'http://placeholder');
+                let relativePath = endpointUrl.pathname.replace(/^\/+/, '');
+                const hadTrailingSlash = relativePath.endsWith('/');
+                if (relativePath && basePathPrefix) {
+                    const lowerRelativePath = relativePath.toLowerCase();
+                    if (lowerRelativePath === basePathPrefix) {
+                        relativePath = '';
+                    }
+                    else if (lowerRelativePath.startsWith(`${basePathPrefix}/`)) {
+                        relativePath = relativePath.slice(basePath.length + 1);
+                    }
+                }
+                const baseForJoin = new URL(baseUrl.toString());
+                const baseSegments = basePath ? basePath.split('/').filter(Boolean) : [];
+                const relativeSegments = relativePath ? relativePath.split('/').filter(Boolean) : [];
+                const combinedSegments = [...baseSegments, ...relativeSegments];
+                let finalPath = combinedSegments.length ? `/${combinedSegments.join('/')}` : '/';
+                if (hadTrailingSlash && !finalPath.endsWith('/')) {
+                    finalPath += '/';
+                }
+                else if (!relativeSegments.length && baseUrl.pathname.endsWith('/') && !finalPath.endsWith('/')) {
+                    finalPath += '/';
+                }
+                baseForJoin.pathname = finalPath;
+                baseForJoin.search = endpointUrl.search;
+                baseForJoin.hash = endpointUrl.hash;
+                url = baseForJoin.toString();
+            }
+        }
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : 'Invalid base URL';
+        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to resolve ChatKit URL: ${message}`, {
+            itemIndex,
+        });
+    }
     try {
         let endpointValue;
         if (endpoint instanceof URL) {
