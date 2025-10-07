@@ -122,7 +122,7 @@ async function chatKitRequest(
   this: IExecuteFunctions,
   itemIndex: number,
   method: 'GET' | 'POST' | 'DELETE',
-  endpoint: string,
+  endpoint: string | URL | string[],
   body?: IDataObject,
   timeout?: number,
 ): Promise<IDataObject> {
@@ -134,9 +134,43 @@ async function chatKitRequest(
     });
   }
 
-  const baseUrl = (credentials.baseUrl || 'https://api.openai.com').replace(/\/+$/u, '');
-  const path = endpoint.replace(/^\/+/, '');
-  const url = `${baseUrl}/${path}`;
+  const baseUrlString = credentials.baseUrl?.trim() || 'https://api.openai.com';
+  let url: string;
+
+  try {
+    let endpointValue: string;
+
+    if (endpoint instanceof URL) {
+      endpointValue = endpoint.toString();
+    } else if (Array.isArray(endpoint)) {
+      endpointValue = endpoint.join('/');
+    } else {
+      endpointValue = endpoint;
+    }
+
+    if (typeof endpointValue !== 'string') {
+      throw new Error('Endpoint must be a string or URL.');
+    }
+
+    const trimmedEndpoint = endpointValue.trim();
+
+    if (!trimmedEndpoint) {
+      throw new Error('Endpoint path is empty');
+    }
+
+    let endpointPath = trimmedEndpoint;
+
+    if (!/^https?:\/\//i.test(endpointPath)) {
+      endpointPath = endpointPath.startsWith('/') ? endpointPath : `/${endpointPath}`;
+    }
+
+    url = new URL(endpointPath, baseUrlString).toString();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Invalid base URL';
+    throw new NodeOperationError(this.getNode(), `Failed to resolve ChatKit URL: ${message}`, {
+      itemIndex,
+    });
+  }
 
   try {
     const response = await axios.request<IDataObject>({
