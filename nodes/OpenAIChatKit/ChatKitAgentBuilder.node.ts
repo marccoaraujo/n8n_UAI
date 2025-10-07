@@ -122,7 +122,7 @@ async function chatKitRequest(
   this: IExecuteFunctions,
   itemIndex: number,
   method: 'GET' | 'POST' | 'DELETE',
-  endpoint: string,
+  endpoint: string | string[],
   body?: IDataObject,
   timeout?: number,
 ): Promise<IDataObject> {
@@ -134,77 +134,96 @@ async function chatKitRequest(
     });
   }
 
-  const baseUrlString = credentials.baseUrl?.trim() || 'https://api.openai.com';
-  let url: string;
+  let baseUrlString = (credentials.baseUrl || 'https://api.openai.com').trim();
+
+  if (!/^https?:\/\//iu.test(baseUrlString)) {
+    baseUrlString = `https://${baseUrlString}`;
+  }
+
+  let baseUrl: URL;
 
   try {
-    const baseUrl = new URL(baseUrlString);
-    const baseSegments = baseUrl.pathname
-      .split('/')
-      .map((segment) => segment.trim())
-      .filter((segment) => segment.length > 0);
-    const endpointSegments = endpoint
-      .split('/')
-      .map((segment) => segment.trim())
-      .filter((segment) => segment.length > 0);
-
-    let effectiveEndpointSegments = endpointSegments;
-
-    if (baseSegments.length > 0 && endpointSegments.length >= baseSegments.length) {
-      const hasDuplicatePrefix = baseSegments.every(
-        (segment, index) => endpointSegments[index] === segment,
-      );
-
-      if (hasDuplicatePrefix) {
-        effectiveEndpointSegments = endpointSegments.slice(baseSegments.length);
-      }
-    }
-
-    const combinedPathSegments = [...baseSegments, ...effectiveEndpointSegments];
-    baseUrl.pathname = `/${combinedPathSegments.join('/')}`;
-    url = baseUrl.toString();
+    baseUrl = new URL(baseUrlString);
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Invalid base URL';
-    throw new NodeOperationError(this.getNode(), `Failed to resolve ChatKit URL: ${message}`, {
+    throw new NodeOperationError(this.getNode(), 'Invalid ChatKit base URL. Please include the protocol (e.g. https://).', {
       itemIndex,
     });
   }
 
-  try {
-    const response = await axios.request<IDataObject>({
-      method,
-      url,
-      data: body,
-      timeout,
-      headers: {
-        Authorization: `Bearer ${credentials.apiKey}`,
-        'Content-Type': 'application/json',
-        'OpenAI-Beta': 'chatkit_beta=v1',
-        ...(credentials.organization ? { 'OpenAI-Organization': credentials.organization } : {}),
-        ...(credentials.projectId ? { 'OpenAI-Project': credentials.projectId } : {}),
-      },
-    });
+  const basePath = baseUrl.pathname.replace(/\/+$/u, '');
+  const endpoints = Array.isArray(endpoint) ? endpoint : [endpoint];
+  let storedError: NodeOperationError | undefined;
 
-    return response.data ?? {};
-  } catch (error) {
-    if (isAxiosError(error)) {
-      const status = error.response?.status;
-      const description = typeof error.response?.data === 'string'
-        ? error.response?.data
-        : JSON.stringify(error.response?.data ?? {});
+  for (let index = 0; index < endpoints.length; index++) {
+    const candidate = endpoints[index];
+    const endpointPath = candidate.startsWith('/') ? candidate : `/${candidate}`;
 
-      throw new NodeOperationError(
-        this.getNode(),
-        `ChatKit request failed${status ? ` (HTTP ${status})` : ''}: ${error.message}`,
-        {
-          itemIndex,
-          description,
-        },
-      );
+    let finalPath: string;
+
+    if (!basePath || endpointPath === basePath || endpointPath.startsWith(`${basePath}/`)) {
+      finalPath = endpointPath;
+    } else {
+      finalPath = `${basePath}/${endpointPath.replace(/^\/+/, '')}`;
     }
 
-    throw error;
+    finalPath = finalPath.replace(/\/+/gu, '/');
+    if (!finalPath.startsWith('/')) {
+      finalPath = `/${finalPath}`;
+    }
+
+    const url = `${baseUrl.origin}${finalPath}`;
+
+    try {
+      const response = await axios.request<IDataObject>({
+        method,
+        url,
+        data: body,
+        timeout,
+        headers: {
+          Authorization: `Bearer ${credentials.apiKey}`,
+          'Content-Type': 'application/json',
+          'OpenAI-Beta': 'chatkit_beta=v1',
+          ...(credentials.organization ? { 'OpenAI-Organization': credentials.organization } : {}),
+          ...(credentials.projectId ? { 'OpenAI-Project': credentials.projectId } : {}),
+        },
+      });
+
+      return response.data ?? {};
+    } catch (error) {
+      if (isAxiosError(error)) {
+        const status = error.response?.status;
+        const description = typeof error.response?.data === 'string'
+          ? error.response?.data
+          : JSON.stringify(error.response?.data ?? {});
+
+        const nodeError = new NodeOperationError(
+          this.getNode(),
+          `ChatKit request failed${status ? ` (HTTP ${status})` : ''}: ${error.message}`,
+          {
+            itemIndex,
+            description,
+          },
+        );
+
+        if (status === 404 && index < endpoints.length - 1) {
+          storedError = nodeError;
+          continue;
+        }
+
+        throw nodeError;
+      }
+
+      throw error;
+    }
   }
+
+  if (storedError) {
+    throw storedError;
+  }
+
+  throw new NodeOperationError(this.getNode(), 'ChatKit request failed: no valid endpoint responded.', {
+    itemIndex,
+  });
 }
 
 export class ChatKitAgentBuilder implements INodeType {
@@ -559,13 +578,19 @@ export class ChatKitAgentBuilder implements INodeType {
           const options = parseJsonParameter.call(this, 'sessionOptions', itemIndex);
 
           const body: IDataObject = {
-            workflow_id: workflowId,
-            ...(userId ? { user_id: userId } : {}),
+            workflow: { id: workflowId },
+            ...(userId ? { user: userId } : {}),
             ...(metadata ? { metadata } : {}),
             ...(options ? { session_options: options } : {}),
           };
 
-          const response = await chatKitRequest.call(this, itemIndex, 'POST', '/v1/chat/sessions', body);
+          const response = await chatKitRequest.call(
+            this,
+            itemIndex,
+            'POST',
+            ['/v1/chatkit/sessions', '/v1/chat/sessions'],
+            body,
+          );
           const sessionPayload = (response.session as IDataObject | undefined) ?? response;
 
           const sessionId = sessionPayload.id as string | undefined;
@@ -605,7 +630,10 @@ export class ChatKitAgentBuilder implements INodeType {
 
         if (operation === 'refresh') {
           const session = ensureSession.call(this, itemIndex, state);
-          const endpoint = `/v1/chat/sessions/${encodeURIComponent(session.id)}/refresh`;
+          const endpoint = [
+            `/v1/chatkit/sessions/${encodeURIComponent(session.id)}/refresh`,
+            `/v1/chat/sessions/${encodeURIComponent(session.id)}/refresh`,
+          ];
           const body: IDataObject = {
             client_secret: session.clientSecret,
           };
@@ -711,7 +739,7 @@ export class ChatKitAgentBuilder implements INodeType {
 
         const payload: IDataObject = {
           client_secret: clientSecret,
-          workflow_id: workflowId,
+          workflow: { id: workflowId },
           messages: [
             {
               role,
@@ -723,7 +751,10 @@ export class ChatKitAgentBuilder implements INodeType {
           ...(metadata ? { metadata } : {}),
         };
 
-        const endpoint = `/v1/chat/sessions/${encodeURIComponent(sessionId)}/messages`;
+        const endpoint = [
+          `/v1/chatkit/sessions/${encodeURIComponent(sessionId)}/messages`,
+          `/v1/chat/sessions/${encodeURIComponent(sessionId)}/messages`,
+        ];
         const response = await chatKitRequest.call(this, itemIndex, 'POST', endpoint, payload, timeout);
         const sanitized = sanitizeResponse(response);
 
